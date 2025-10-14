@@ -48,15 +48,20 @@ contract GuardedExecModuleTest is RhinestoneModuleKit, Test {
         console.log("Session Key:", sessionKey);
         console.log("Registry Owner:", registryOwner);
         
-        // Deploy the GuardedExecModule
-        guardedModule = new GuardedExecModule();
-        vm.label(address(guardedModule), "GuardedExecModule");
-        console.log("GuardedExecModule deployed:", address(guardedModule));
+        // Deploy registry first
+        registry = new TargetRegistry(registryOwner);
+        vm.label(address(registry), "TargetRegistry");
+        console.log("TargetRegistry deployed:", address(registry));
         
         // Deploy the GuardedRouter (stateless)
         router = new GuardedRouter();
         vm.label(address(router), "GuardedRouter");
         console.log("GuardedRouter deployed:", address(router));
+        
+        // Deploy the GuardedExecModule with immutable registry/router
+        guardedModule = new GuardedExecModule(address(registry), address(router));
+        vm.label(address(guardedModule), "GuardedExecModule");
+        console.log("GuardedExecModule deployed:", address(guardedModule));
         
         // Deploy mock DeFi pools
         uniswapPool = new MockDeFiPool();
@@ -75,11 +80,6 @@ contract GuardedExecModuleTest is RhinestoneModuleKit, Test {
         vm.deal(smartAccount, 10 ether);
         console.log("Smart Account created:", smartAccount);
         
-        // Deploy registry with the smart account as owner
-        // (In production, this could be the smart account or a separate owner)
-        registry = new TargetRegistry(registryOwner);
-        vm.label(address(registry), "TargetRegistry");
-        console.log("TargetRegistry deployed:", address(registry));
         
         // Whitelist the DeFi pools
         vm.startPrank(registryOwner);
@@ -89,12 +89,11 @@ contract GuardedExecModuleTest is RhinestoneModuleKit, Test {
         vm.stopPrank();
         console.log("Whitelisted all mock DeFi pools");
         
-        // Install the GuardedExecModule on the smart account
-        bytes memory installData = abi.encode(address(registry), address(router));
+        // Install the GuardedExecModule on the smart account (no data needed)
         instance.installModule({
             moduleTypeId: MODULE_TYPE_EXECUTOR,
             module: address(guardedModule),
-            data: installData
+            data: ""
         });
         console.log("GuardedExecModule installed on smart account");
         
@@ -316,9 +315,9 @@ contract GuardedExecModuleTest is RhinestoneModuleKit, Test {
         bool isInitialized = guardedModule.isInitialized(smartAccount);
         assertTrue(isInitialized, "Module should be initialized");
         
-        // Check stored values
-        address storedRegistry = address(guardedModule.registry(smartAccount));
-        address storedRouter = guardedModule.router(smartAccount);
+        // Check stored values (immutable)
+        address storedRegistry = address(guardedModule.registry());
+        address storedRouter = guardedModule.router();
         
         assertEq(storedRegistry, address(registry), "Registry should match");
         assertEq(storedRouter, address(router), "Router should match");
@@ -348,9 +347,8 @@ contract GuardedExecModuleTest is RhinestoneModuleKit, Test {
         });
         
         // Verify storage is cleaned
-        assertFalse(guardedModule.isInitialized(smartAccount), "Should not be initialized");
-        assertEq(address(guardedModule.registry(smartAccount)), address(0), "Registry should be cleared");
-        assertEq(guardedModule.router(smartAccount), address(0), "Router should be cleared");
+        assertTrue(guardedModule.isInitialized(smartAccount), "Should still be initialized (always true)");
+        // Note: Registry and router are immutable, so they don't change
         
         console.log("[SUCCESS] Uninstall correctly cleaned up storage");
         console.log("========================================\n");

@@ -8,13 +8,15 @@ import { ITargetRegistry } from "./TargetRegistry.sol";
 import "forge-std/console.sol";
 
 /**
- * Public surface you call from the SDK.
- * Inside, we delegatecall the stateless GuardedRouter in the account context.
+ * @title GuardedExecModule
+ * @notice Secure executor module with immutable registry/router configuration
+ * @dev Registry and router are set at deployment time and cannot be changed
+ *      to prevent malicious overwrites via onInstall()
  */
 contract GuardedExecModule is ERC7579ExecutorBase {
-    // Per-account storage
-    mapping(address => ITargetRegistry) public registry;   // per-account setting (set on install)
-    mapping(address => address) public router;             // stateless GuardedRouter per account
+    // SECURITY: Immutable registry and router set at deployment
+    ITargetRegistry public immutable registry;
+    address public immutable router;
 
     // ---------- Module metadata ----------
     function name() external pure returns (string memory) { return "GuardedExecModule"; }
@@ -28,22 +30,25 @@ contract GuardedExecModule is ERC7579ExecutorBase {
 
     // Check if module is initialized for a specific smart account
     function isInitialized(address smartAccount) external view override returns (bool) {
-        // Module is considered initialized if it has a registry set for this account
-        return address(registry[smartAccount]) != address(0);
+        // Module is always "initialized" since registry/router are immutable
+        return true;
+    }
+
+    // ---------- Constructor (SECURITY: Set registry/router at deployment) ----------
+    constructor(address _registry, address _router) {
+        require(_registry != address(0), "invalid-registry");
+        require(_router != address(0), "invalid-router");
+        registry = ITargetRegistry(_registry);
+        router = _router;
     }
 
     // ---------- Install / Uninstall ----------
-    // data = abi.encode(address registry_, address router_)
-    function onInstall(bytes calldata data) external override {
-        (address reg, address rtr) = abi.decode(data, (address, address));
-        registry[msg.sender] = ITargetRegistry(reg);
-        router[msg.sender]   = rtr;
+    function onInstall(bytes calldata) external override {
+        // No-op: Registry and router are immutable
     }
 
     function onUninstall(bytes calldata) external override {
-        // Clean up storage for this account
-        delete registry[msg.sender];
-        delete router[msg.sender];
+        // No-op: Nothing to clean up
     }
 
     // ---------- Public entrypoint you call from the SDK ----------
@@ -58,20 +63,17 @@ contract GuardedExecModule is ERC7579ExecutorBase {
         console.log("Called by (session key/EOA):", msg.sender);
         console.log("Module address (this):", address(this));
         
-        // Get the registry and router for the calling account
-        ITargetRegistry accountRegistry = registry[msg.sender];
-        address accountRouter = router[msg.sender];
-        
         console.log("Smart Account:", msg.sender);
-        console.log("Registry:", address(accountRegistry));
-        console.log("Router:", accountRouter);
+        console.log("Registry:", address(registry));
+        console.log("Router:", router);
         
-        require(address(accountRegistry) != address(0), "not-initialized");
+        require(targets.length == calldatas.length, "length-mismatch");
+        require(targets.length > 0, "empty-batch");
         
-        // Optional pre-check (router also checks):
+        // Pre-check (router also checks):
         console.log("\nPre-check: Verifying all targets are whitelisted...");
         for (uint256 i = 0; i < targets.length; i++) {
-            bool whitelisted = accountRegistry.isWhitelisted(targets[i]);
+            bool whitelisted = registry.isWhitelisted(targets[i]);
             console.log("Target #%d:", i);
             console.log("  Address:", targets[i]);
             console.log("  Whitelisted:", whitelisted);
@@ -82,7 +84,7 @@ contract GuardedExecModule is ERC7579ExecutorBase {
         // Build router calldata
         bytes memory routerData = abi.encodeWithSignature(
             "guardedBatch(address,address[],bytes[],bool)",
-            address(accountRegistry),
+            address(registry),
             targets,
             calldatas,
             revertAll
@@ -92,7 +94,7 @@ contract GuardedExecModule is ERC7579ExecutorBase {
         console.log("This will ask the smart account to delegatecall the router");
         
         // This uses msg.sender (the ACCOUNT) under the hood and performs a DELEGATECALL to `router`
-        _executeDelegateCall(accountRouter, routerData);
+        _executeDelegateCall(router, routerData);
         
         console.log("\nGuarded batch execution completed!");
         console.log("========================================\n");
