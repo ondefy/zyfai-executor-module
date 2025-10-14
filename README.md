@@ -1,11 +1,4 @@
-# GuardedExecModule - Two Implementation Approaches
-
-This repository contains **two different implementation approaches** for a session key-enabled DeFi executor module for ERC-7579 smart accounts.
-
-## Project Structure
-
-
-## Quick Start
+# GuardedExecModule
 
 ### Run Tests
 ```bash
