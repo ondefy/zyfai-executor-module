@@ -6,10 +6,10 @@ import { console } from "forge-std/console.sol";
 import { RhinestoneModuleKit, ModuleKitHelpers, AccountInstance } from "modulekit/ModuleKit.sol";
 import { MODULE_TYPE_EXECUTOR } from "modulekit/accounts/common/interfaces/IERC7579Module.sol";
 
-import { GuardedExecModule } from "src/GuardedExecModule.sol";
-import { GuardedRouter } from "src/GuardedRouter.sol";
-import { TargetRegistry } from "src/TargetRegistry.sol";
-import { MockDeFiPool } from "./mocks/MockDeFiPool.sol";
+import { GuardedExecModule } from "src/delegatecall-approach/GuardedExecModule.sol";
+import { GuardedRouter } from "src/delegatecall-approach/GuardedRouter.sol";
+import { TargetRegistry } from "src/delegatecall-approach/TargetRegistry.sol";
+import { MockDeFiPool } from "test/delegatecall-approach/MockDeFiPool.sol";
 
 /**
  * @title GuardedExecModuleTest
