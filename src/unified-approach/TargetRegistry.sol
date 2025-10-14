@@ -5,23 +5,16 @@ import "@openzeppelin/contracts/governance/TimelockController.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "forge-std/console.sol";
-/**
- * @title ISafeWallet
- * @notice Interface for Safe wallet's getOwners() function
- */
-interface ISafeWallet {
-    function getOwners() external view returns (address[] memory);
-}
+import { ISafeWallet } from "./interfaces/ISafeWallet.sol";
 
 /**
- * @title TargetRegistryWithOZ
+ * @title TargetRegistry
  * @author Zyfi
  * @notice Registry using OpenZeppelin's TimelockController for battle-tested timelock
  * @dev Integrates with OZ TimelockController for proven security and reliability
  *      Pausable functionality protects against compromised owner wallet
  */
-contract TargetRegistryWithOZ is Ownable, Pausable {
+contract TargetRegistry is Ownable, Pausable {
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
     //////////////////////////////////////////////////////////////*/

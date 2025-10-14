@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import { TargetRegistryWithOZ } from "src/unified-approach/TargetRegistryWithOZ.sol";
+import { TargetRegistry } from "src/unified-approach/TargetRegistry.sol";
 import { MockSafeWallet } from "./MockSafeWallet.sol";
 
 /**
  * @title TestTargetRegistryWithMockSafe
  * @notice Test registry that uses mock Safe wallet for getOwners() calls
  */
-contract TestTargetRegistryWithMockSafe is TargetRegistryWithOZ {
+contract TestTargetRegistryWithMockSafe is TargetRegistry {
     MockSafeWallet public mockSafeWallet;
     
-    constructor(address admin, address _mockSafeWallet) TargetRegistryWithOZ(admin) {
+    constructor(address admin, address _mockSafeWallet) TargetRegistry(admin) {
         mockSafeWallet = MockSafeWallet(_mockSafeWallet);
     }
     

@@ -1,29 +1,28 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import { ERC7579ExecutorBase } from "modulekit/Modules.sol";
-import { Execution } from "modulekit/accounts/erc7579/lib/ExecutionLib.sol";
-import { TargetRegistryWithOZ } from "./TargetRegistryWithOZ.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "forge-std/console.sol";
+import { ERC7579ExecutorBase } from "modulekit/Modules.sol";
+import { Execution } from "modulekit/accounts/erc7579/lib/ExecutionLib.sol";
+import { TargetRegistry } from "./TargetRegistry.sol";
 
 /**
- * @title GuardedExecModuleWithOZ
+ * @title GuardedExecModule
  * @author Zyfi
  * @notice Production-ready unified executor module using OpenZeppelin TimelockController
  * @dev This module allows session keys to execute whitelisted DeFi operations
  *      while maintaining smart account context (msg.sender = smart account).
  *      Pausable functionality provides emergency stop for compromised session keys.
  */
-contract GuardedExecModuleWithOZ is ERC7579ExecutorBase, Pausable {
+contract GuardedExecModule is ERC7579ExecutorBase, Pausable {
     /*//////////////////////////////////////////////////////////////
                                STORAGE
     //////////////////////////////////////////////////////////////*/
     
     /// @notice Immutable registry for target + selector whitelist verification
     /// @dev Set once in constructor, cannot be changed to prevent malicious overwrites
-    TargetRegistryWithOZ public immutable registry;
+    TargetRegistry public immutable registry;
     
     /// @notice Address that can pause/unpause the module (emergency controller)
     address public pauseController;
@@ -54,13 +53,13 @@ contract GuardedExecModuleWithOZ is ERC7579ExecutorBase, Pausable {
     /**
      * @notice Initialize the module with immutable registry and pause controller
      * @dev Registry address is set once and cannot be changed
-     * @param _registry Address of the TargetRegistryWithOZ contract
+     * @param _registry Address of the TargetRegistry contract
      * @param _pauseController Address that can pause/unpause (should be multisig)
      */
     constructor(address _registry, address _pauseController) {
         if (_registry == address(0)) revert InvalidRegistry();
         if (_pauseController == address(0)) revert OnlyPauseController();
-        registry = TargetRegistryWithOZ(_registry);
+        registry = TargetRegistry(_registry);
         pauseController = _pauseController;
     }
 
@@ -73,7 +72,7 @@ contract GuardedExecModuleWithOZ is ERC7579ExecutorBase, Pausable {
      * @return Module name
      */
     function name() external pure returns (string memory) {
-        return "GuardedExecModuleWithOZ";
+        return "GuardedExecModule";
     }
     
     /**

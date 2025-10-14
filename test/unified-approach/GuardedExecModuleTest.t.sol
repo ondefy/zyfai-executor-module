@@ -5,8 +5,8 @@ import { Test } from "forge-std/Test.sol";
 import { RhinestoneModuleKit, ModuleKitHelpers, AccountInstance } from "modulekit/ModuleKit.sol";
 import { MODULE_TYPE_EXECUTOR } from "modulekit/accounts/common/interfaces/IERC7579Module.sol";
 
-import { GuardedExecModuleWithOZ } from "src/unified-approach/GuardedExecModuleWithOZ.sol";
-import { TargetRegistryWithOZ } from "src/unified-approach/TargetRegistryWithOZ.sol";
+import { GuardedExecModule } from "src/unified-approach/GuardedExecModule.sol";
+import { TargetRegistry } from "src/unified-approach/TargetRegistry.sol";
 import { MockDeFiPool } from "test/mocks/MockDeFiPool.sol";
 import { MockERC20 } from "test/mocks/MockERC20.sol";
 import { MockSafeWallet } from "test/mocks/MockSafeWallet.sol";
@@ -14,16 +14,16 @@ import { TestTargetRegistryWithMockSafe } from "test/mocks/TestTargetRegistryWit
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
- * @title GuardedExecModuleWithOZTest
+ * @title GuardedExecModuleTest
  * @notice Test the unified module with OpenZeppelin TimelockController
  */
-contract GuardedExecModuleWithOZTest is RhinestoneModuleKit, Test {
+contract GuardedExecModuleTest is RhinestoneModuleKit, Test {
     using ModuleKitHelpers for *;
 
     // Core contracts
     AccountInstance internal instance;
-    GuardedExecModuleWithOZ internal guardedModule;
-    TargetRegistryWithOZ internal registry;
+    GuardedExecModule internal guardedModule;
+    TargetRegistry internal registry;
     
     // Mock DeFi protocols
     MockDeFiPool internal uniswapPool;
@@ -53,10 +53,10 @@ contract GuardedExecModuleWithOZTest is RhinestoneModuleKit, Test {
         registryOwner = makeAddr("registryOwner");
         pauseController = makeAddr("pauseController");
         
-        // Deploy registry with OZ TimelockController
+        // Deploy registry with OpenZeppelin TimelockController
         vm.prank(registryOwner);
-        registry = new TargetRegistryWithOZ(registryOwner);
-        vm.label(address(registry), "TargetRegistryWithOZ");
+        registry = new TargetRegistry(registryOwner);
+        vm.label(address(registry), "TargetRegistry");
         
         // Deploy mock DeFi pools
         uniswapPool = new MockDeFiPool();
@@ -73,7 +73,7 @@ contract GuardedExecModuleWithOZTest is RhinestoneModuleKit, Test {
         vm.label(address(usdcToken), "USDC");
         vm.label(address(wethToken), "WETH");
         
-        // Schedule and execute whitelist operations (with OZ timelock)
+        // Schedule and execute whitelist operations (with OpenZeppelin timelock)
         vm.startPrank(registryOwner);
         
         // Schedule adds for DeFi pools
@@ -91,7 +91,7 @@ contract GuardedExecModuleWithOZTest is RhinestoneModuleKit, Test {
         // Fast forward time by 1 day + 1 second
         vm.warp(block.timestamp + 1 days + 1);
         
-        // Execute the operations (ANYONE can execute with OZ!)
+        // Execute the operations (ANYONE can execute with OpenZeppelin!)
         registry.executeOperation(address(uniswapPool), SWAP_SELECTOR);
         registry.executeOperation(address(aavePool), SWAP_SELECTOR);
         registry.executeOperation(address(curvePool), SWAP_SELECTOR);
@@ -100,12 +100,12 @@ contract GuardedExecModuleWithOZTest is RhinestoneModuleKit, Test {
         
         vm.stopPrank();
         
-        // Deploy module with OZ registry and pause controller
-        guardedModule = new GuardedExecModuleWithOZ(address(registry), pauseController);
-        vm.label(address(guardedModule), "GuardedExecModuleWithOZ");
+        // Deploy module with registry and pause controller
+        guardedModule = new GuardedExecModule(address(registry), pauseController);
+        vm.label(address(guardedModule), "GuardedExecModule");
         
         // Create smart account
-        instance = makeAccountInstance("OZTest");
+        instance = makeAccountInstance("SmartAccount");
         smartAccount = address(instance.account);
         vm.deal(smartAccount, 10 ether);
         
@@ -149,8 +149,8 @@ contract GuardedExecModuleWithOZTest is RhinestoneModuleKit, Test {
         vm.stopPrank();
         
         // Deploy new module with updated registry
-        guardedModule = new GuardedExecModuleWithOZ(address(registry), pauseController);
-        vm.label(address(guardedModule), "GuardedExecModuleWithOZ");
+        guardedModule = new GuardedExecModule(address(registry), pauseController);
+        vm.label(address(guardedModule), "GuardedExecModule");
         
         // Install module
         instance.installModule({
@@ -161,7 +161,7 @@ contract GuardedExecModuleWithOZTest is RhinestoneModuleKit, Test {
     }
 
     /**
-     * @notice TEST 1: Verify msg.sender is the smart account with OZ registry
+     * @notice TEST 1: Verify msg.sender is the smart account with registry
      */
     function test_MsgSenderIsSmartAccount() public {
         // Prepare single call to Uniswap
@@ -180,7 +180,7 @@ contract GuardedExecModuleWithOZTest is RhinestoneModuleKit, Test {
             target: address(guardedModule),
             value: 0,
             callData: abi.encodeWithSelector(
-                GuardedExecModuleWithOZ.executeGuardedBatch.selector,
+                GuardedExecModule.executeGuardedBatch.selector,
                 targets,
                 calldatas
             )
@@ -194,7 +194,7 @@ contract GuardedExecModuleWithOZTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 2: Batch multiple DeFi calls with OZ
+     * @notice TEST 2: Batch multiple DeFi calls
      */
     function test_BatchMultipleDeFiCalls() public {
         // Prepare batch: Uniswap swap, Aave swap, Curve swap
@@ -214,7 +214,7 @@ contract GuardedExecModuleWithOZTest is RhinestoneModuleKit, Test {
             target: address(guardedModule),
             value: 0,
             callData: abi.encodeWithSelector(
-                GuardedExecModuleWithOZ.executeGuardedBatch.selector,
+                GuardedExecModule.executeGuardedBatch.selector,
                 targets,
                 calldatas
             )
@@ -234,10 +234,10 @@ contract GuardedExecModuleWithOZTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 3: OZ Timelock enforced correctly
+     * @notice TEST 3: OpenZeppelin Timelock enforced correctly
      * @dev Skipped - instance.exec wraps errors
      */
-    function skip_test_OZTimelockEnforced() public {
+    function skip_test_OpenZeppelinTimelockEnforced() public {
         MockDeFiPool newPool = new MockDeFiPool();
         
         vm.startPrank(registryOwner);
@@ -259,7 +259,7 @@ contract GuardedExecModuleWithOZTest is RhinestoneModuleKit, Test {
             target: address(guardedModule),
             value: 0,
             callData: abi.encodeWithSelector(
-                GuardedExecModuleWithOZ.executeGuardedBatch.selector,
+                GuardedExecModule.executeGuardedBatch.selector,
                 targets,
                 calldatas
             )
@@ -276,7 +276,7 @@ contract GuardedExecModuleWithOZTest is RhinestoneModuleKit, Test {
             target: address(guardedModule),
             value: 0,
             callData: abi.encodeWithSelector(
-                GuardedExecModuleWithOZ.executeGuardedBatch.selector,
+                GuardedExecModule.executeGuardedBatch.selector,
                 targets,
                 calldatas
             )
@@ -298,7 +298,7 @@ contract GuardedExecModuleWithOZTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 5: Anyone can execute after OZ timelock
+     * @notice TEST 5: Anyone can execute after OpenZeppelin timelock
      */
     function test_PermissionlessExecution() public {
         MockDeFiPool newPool = new MockDeFiPool();
@@ -310,7 +310,7 @@ contract GuardedExecModuleWithOZTest is RhinestoneModuleKit, Test {
         // Fast forward
         vm.warp(block.timestamp + 1 days + 1);
         
-        // Random user executes (this is an OZ feature!)
+        // Random user executes (this is an OpenZeppelin feature!)
         address randomUser = makeAddr("randomUser");
         vm.prank(randomUser);
         registry.executeOperation(address(newPool), SWAP_SELECTOR);
@@ -346,7 +346,7 @@ contract GuardedExecModuleWithOZTest is RhinestoneModuleKit, Test {
         
         // Attacker tries to pause (should fail)
         vm.prank(attacker);
-        vm.expectRevert(GuardedExecModuleWithOZ.OnlyPauseController.selector);
+        vm.expectRevert(GuardedExecModule.OnlyPauseController.selector);
         guardedModule.pause();
         
         // Pause controller can pause
@@ -355,7 +355,7 @@ contract GuardedExecModuleWithOZTest is RhinestoneModuleKit, Test {
         
         // Attacker tries to unpause (should fail)
         vm.prank(attacker);
-        vm.expectRevert(GuardedExecModuleWithOZ.OnlyPauseController.selector);
+        vm.expectRevert(GuardedExecModule.OnlyPauseController.selector);
         guardedModule.unpause();
         
         // Pause controller can unpause
@@ -412,7 +412,7 @@ contract GuardedExecModuleWithOZTest is RhinestoneModuleKit, Test {
             target: address(guardedModule),
             value: 0,
             callData: abi.encodeWithSelector(
-                GuardedExecModuleWithOZ.executeGuardedBatch.selector,
+                GuardedExecModule.executeGuardedBatch.selector,
                 targets,
                 calldatas
             )
@@ -435,7 +435,7 @@ contract GuardedExecModuleWithOZTest is RhinestoneModuleKit, Test {
             target: address(guardedModule),
             value: 0,
             callData: abi.encodeWithSelector(
-                GuardedExecModuleWithOZ.executeGuardedBatch.selector,
+                GuardedExecModule.executeGuardedBatch.selector,
                 targets,
                 calldatas
             )
@@ -489,7 +489,7 @@ contract GuardedExecModuleWithOZTest is RhinestoneModuleKit, Test {
             target: address(guardedModule),
             value: 0,
             callData: abi.encodeWithSelector(
-                GuardedExecModuleWithOZ.executeGuardedBatch.selector,
+                GuardedExecModule.executeGuardedBatch.selector,
                 targets,
                 calldatas
             )
@@ -502,7 +502,7 @@ contract GuardedExecModuleWithOZTest is RhinestoneModuleKit, Test {
             target: address(guardedModule),
             value: 0,
             callData: abi.encodeWithSelector(
-                GuardedExecModuleWithOZ.executeGuardedBatch.selector,
+                GuardedExecModule.executeGuardedBatch.selector,
                 targets,
                 calldatas
             )
@@ -525,7 +525,7 @@ contract GuardedExecModuleWithOZTest is RhinestoneModuleKit, Test {
             target: address(guardedModule),
             value: 0,
             callData: abi.encodeWithSelector(
-                GuardedExecModuleWithOZ.executeGuardedBatch.selector,
+                GuardedExecModule.executeGuardedBatch.selector,
                 targets,
                 calldatas
             )

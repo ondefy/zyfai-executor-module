@@ -2,12 +2,12 @@
 pragma solidity ^0.8.23;
 
 import { Test } from "forge-std/Test.sol";
-import { TargetRegistryWithOZ } from "src/unified-approach/TargetRegistryWithOZ.sol";
+import { TargetRegistry } from "src/unified-approach/TargetRegistry.sol";
 import { MockSafeWallet } from "test/mocks/MockSafeWallet.sol";
 import { TestTargetRegistryWithMockSafe } from "test/mocks/TestTargetRegistryWithMockSafe.sol";
 
-contract TargetRegistryWithOZTest is Test {
-    TargetRegistryWithOZ public registry;
+contract TargetRegistryTest is Test {
+    TargetRegistry public registry;
     address public owner;
     address public user;
     
@@ -20,7 +20,7 @@ contract TargetRegistryWithOZTest is Test {
         mockTarget = makeAddr("mockTarget");
         
         vm.prank(owner);
-        registry = new TargetRegistryWithOZ(owner);
+        registry = new TargetRegistry(owner);
     }
 
     function test_ScheduleAndExecuteAdd() public {
