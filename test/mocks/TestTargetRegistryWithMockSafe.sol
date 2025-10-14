@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import { TargetRegistry } from "src/unified-approach/TargetRegistry.sol";
+import { TargetRegistry } from "src/TargetRegistry.sol";
 import { MockSafeWallet } from "./MockSafeWallet.sol";
 
 /**

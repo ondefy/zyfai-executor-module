@@ -5,8 +5,8 @@ import { Test } from "forge-std/Test.sol";
 import { RhinestoneModuleKit, ModuleKitHelpers, AccountInstance } from "modulekit/ModuleKit.sol";
 import { MODULE_TYPE_EXECUTOR } from "modulekit/accounts/common/interfaces/IERC7579Module.sol";
 
-import { GuardedExecModule } from "src/unified-approach/GuardedExecModule.sol";
-import { TargetRegistry } from "src/unified-approach/TargetRegistry.sol";
+import { GuardedExecModule } from "src/GuardedExecModule.sol";
+import { TargetRegistry } from "src/TargetRegistry.sol";
 import { MockDeFiPool } from "test/mocks/MockDeFiPool.sol";
 import { MockERC20 } from "test/mocks/MockERC20.sol";
 import { MockSafeWallet } from "test/mocks/MockSafeWallet.sol";
@@ -15,7 +15,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title GuardedExecModuleTest
- * @notice Test the unified module with OpenZeppelin TimelockController
+ * @notice Test the GuardedExecModule with OpenZeppelin TimelockController
  */
 contract GuardedExecModuleTest is RhinestoneModuleKit, Test {
     using ModuleKitHelpers for *;

@@ -10,7 +10,7 @@ import { TargetRegistry } from "./TargetRegistry.sol";
 /**
  * @title GuardedExecModule
  * @author Zyfi
- * @notice Production-ready unified executor module using OpenZeppelin TimelockController
+ * @notice GuardedExecModule executor module using OpenZeppelin TimelockController
  * @dev This module allows session keys to execute whitelisted DeFi operations
  *      while maintaining smart account context (msg.sender = smart account).
  *      Pausable functionality provides emergency stop for compromised session keys.
