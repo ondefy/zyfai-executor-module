@@ -22,10 +22,10 @@ rhinestone-executor-module/
 forge test
 
 # Test unified approach only (RECOMMENDED)
-forge test --match-path test/unified-approach/
+forge test --match-path "test/unified-approach/*"
 
 # Test delegatecall approach only
-forge test --match-path test/delegatecall-approach/
+forge test --match-path "test/delegatecall-approach/*"
 
 # Run all tests
 forge test --match-path test/unified-approach/GuardedExecModule.t.sol -vv
