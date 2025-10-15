@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
+import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ERC7579ExecutorBase } from "modulekit/Modules.sol";
@@ -15,7 +16,21 @@ import { TargetRegistry } from "./TargetRegistry.sol";
  *      while maintaining smart account context (msg.sender = smart account).
  *      Pausable functionality provides emergency stop for compromised session keys.
  */
-contract GuardedExecModule is ERC7579ExecutorBase, Pausable {
+contract GuardedExecModule is ERC7579ExecutorBase, Ownable, Pausable {
+    /*//////////////////////////////////////////////////////////////
+                               CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+    
+    /// @notice ERC20 transfer selector constant for gas optimization
+    bytes4 private constant TRANSFER_SELECTOR = IERC20.transfer.selector;
+    
+    /// @notice Minimum calldata length for selector extraction
+    uint256 private constant MIN_SELECTOR_LENGTH = 4;
+    
+    /// @notice Minimum calldata length for ERC20 transfer validation
+    /// @dev 4 bytes (selector) + 32 bytes (to) + 32 bytes (amount) = 68 bytes
+    uint256 private constant MIN_TRANSFER_LENGTH = 68;
+
     /*//////////////////////////////////////////////////////////////
                                STORAGE
     //////////////////////////////////////////////////////////////*/
@@ -23,22 +38,10 @@ contract GuardedExecModule is ERC7579ExecutorBase, Pausable {
     /// @notice Immutable registry for target + selector whitelist verification
     /// @dev Set once in constructor, cannot be changed to prevent malicious overwrites
     TargetRegistry public immutable registry;
-    
-    /// @notice Address that can pause/unpause the module (emergency controller)
-    address public pauseController;
-
-    /*//////////////////////////////////////////////////////////////
-                               EVENTS
-    //////////////////////////////////////////////////////////////*/
-    
-    event PauseControllerUpdated(address indexed oldController, address indexed newController);
 
     /*//////////////////////////////////////////////////////////////
                                ERRORS
     //////////////////////////////////////////////////////////////*/
-    
-    error OnlyPauseController();
-    
     error InvalidRegistry();
     error EmptyBatch();
     error LengthMismatch();
@@ -51,16 +54,14 @@ contract GuardedExecModule is ERC7579ExecutorBase, Pausable {
     //////////////////////////////////////////////////////////////*/
     
     /**
-     * @notice Initialize the module with immutable registry and pause controller
+     * @notice Initialize the module with immutable registry and owner
      * @dev Registry address is set once and cannot be changed
      * @param _registry Address of the TargetRegistry contract
-     * @param _pauseController Address that can pause/unpause (should be multisig)
+     * @param _owner Address that can pause/unpause (should be multisig)
      */
-    constructor(address _registry, address _pauseController) {
+    constructor(address _registry, address _owner) Ownable(_owner) {
         if (_registry == address(0)) revert InvalidRegistry();
-        if (_pauseController == address(0)) revert OnlyPauseController();
         registry = TargetRegistry(_registry);
-        pauseController = _pauseController;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -106,16 +107,11 @@ contract GuardedExecModule is ERC7579ExecutorBase, Pausable {
                           PAUSE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
     
-    modifier onlyPauseController() {
-        if (msg.sender != pauseController) revert OnlyPauseController();
-        _;
-    }
-    
     /**
      * @notice Pause the module (emergency stop)
      * @dev Stops all executeGuardedBatch calls - use if session key compromised
      */
-    function pause() external onlyPauseController {
+    function pause() external onlyOwner {
         _pause();
     }
     
@@ -123,20 +119,8 @@ contract GuardedExecModule is ERC7579ExecutorBase, Pausable {
      * @notice Unpause the module
      * @dev Allows executeGuardedBatch calls again
      */
-    function unpause() external onlyPauseController {
+    function unpause() external onlyOwner {
         _unpause();
-    }
-    
-    /**
-     * @notice Update the pause controller address
-     * @dev Only current pause controller can transfer control
-     * @param newController New pause controller address
-     */
-    function updatePauseController(address newController) external onlyPauseController {
-        if (newController == address(0)) revert OnlyPauseController();
-        address oldController = pauseController;
-        pauseController = newController;
-        emit PauseControllerUpdated(oldController, newController);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -174,50 +158,48 @@ contract GuardedExecModule is ERC7579ExecutorBase, Pausable {
      * @custom:security-note This function can be called by anyone (e.g., session keys)
      *                        but only whitelisted target+selector combinations can be called
      *                        Can be emergency stopped by pause controller
+     * @custom:optimization Gas-optimized with unchecked increments and cached lengths
      */
     function executeGuardedBatch(
         address[] calldata targets,
         bytes[] calldata calldatas
     ) external whenNotPaused {
         // Input validation
-        if (targets.length == 0) revert EmptyBatch();
-        if (targets.length != calldatas.length) revert LengthMismatch();
+        uint256 length = targets.length; // Cache length for gas savings
+        if (length == 0) revert EmptyBatch();
+        if (length != calldatas.length) revert LengthMismatch();
         
-        // Pre-flight whitelist verification for all target+selector combinations
-        // This prevents wasted gas if any combination is not whitelisted
-        for (uint256 i = 0; i < targets.length; i++) {
+        // Build execution array (allocate once)
+        Execution[] memory executions = new Execution[](length);
+        
+        // Single-pass validation and execution array building
+        // SECURITY: All validations happen before any execution
+        for (uint256 i = 0; i < length;) {
+            bytes calldata currentCalldata = calldatas[i];
+            address currentTarget = targets[i];
+            
             // Extract selector from calldata (first 4 bytes)
-            if (calldatas[i].length < 4) revert InvalidCalldata();
-            bytes4 selector = bytes4(calldatas[i][:4]);
+            if (currentCalldata.length < MIN_SELECTOR_LENGTH) revert InvalidCalldata();
+            bytes4 selector = bytes4(currentCalldata[:4]);
             
-            // Check if target+selector is whitelisted
-            if (!registry.isWhitelisted(targets[i], selector)) {
-                revert TargetSelectorNotWhitelisted(targets[i], selector);
-            }
-        }
-
-        // Build execution array for batched calls
-        Execution[] memory executions = new Execution[](targets.length);
-        
-        for (uint256 i = 0; i < targets.length; i++) {
-            // Defense in depth: double-check whitelist
-            if (calldatas[i].length < 4) revert InvalidCalldata();
-            bytes4 selector = bytes4(calldatas[i][:4]);
-            
-            if (!registry.isWhitelisted(targets[i], selector)) {
-                revert TargetSelectorNotWhitelisted(targets[i], selector);
+            // SECURITY CHECK 1: Whitelist verification
+            if (!registry.isWhitelisted(currentTarget, selector)) {
+                revert TargetSelectorNotWhitelisted(currentTarget, selector);
             }
             
-            // Additional ERC20 transfer restriction check
-            if (selector == IERC20.transfer.selector) {
-                _validateERC20Transfer(targets[i], calldatas[i]);
+            // SECURITY CHECK 2: ERC20 transfer restriction check
+            if (selector == TRANSFER_SELECTOR) {
+                _validateERC20Transfer(currentTarget, currentCalldata);
             }
             
+            // Build execution after all validations pass
             executions[i] = Execution({
-                target: targets[i],
+                target: currentTarget,
                 value: 0,
-                callData: calldatas[i]
+                callData: currentCalldata
             });
+            
+            unchecked { ++i; } // Safe: i < length, cannot overflow
         }
         
         // Execute batch via smart account
@@ -237,7 +219,7 @@ contract GuardedExecModule is ERC7579ExecutorBase, Pausable {
      */
     function _validateERC20Transfer(address token, bytes calldata callData) internal view {
         // Decode transfer(address to, uint256 amount) parameters
-        if (callData.length < 68) revert InvalidCalldata(); // 4 (selector) + 32 (to) + 32 (amount)        
+        if (callData.length < MIN_TRANSFER_LENGTH) revert InvalidCalldata();
         
         address to = abi.decode(callData[4:36], (address));
 

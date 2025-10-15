@@ -184,10 +184,12 @@ contract TargetRegistry is Ownable, Pausable {
         
         // Check if `to` is one of the smart wallet's owners
         try ISafeWallet(smartWallet).getOwners() returns (address[] memory owners) {
-            for (uint256 i = 0; i < owners.length; i++) {
+            uint256 length = owners.length; // Cache length for gas savings
+            for (uint256 i = 0; i < length;) {
                 if (owners[i] == to) {
                     return true;
                 }
+                unchecked { ++i; } // Safe: i < length, cannot overflow
             }
         } catch {
             // If getOwners() fails, only allow transfer to smart wallet itself

@@ -40,7 +40,7 @@ contract GuardedExecModuleTest is RhinestoneModuleKit, Test {
     // Test accounts
     address internal smartAccount;
     address internal registryOwner;
-    address internal pauseController;
+    address internal moduleOwner;
     
     // Common selectors
     bytes4 internal constant SWAP_SELECTOR = MockDeFiPool.swap.selector;
@@ -51,7 +51,7 @@ contract GuardedExecModuleTest is RhinestoneModuleKit, Test {
         
         // Create test accounts
         registryOwner = makeAddr("registryOwner");
-        pauseController = makeAddr("pauseController");
+        moduleOwner = makeAddr("moduleOwner");
         
         // Deploy registry with OpenZeppelin TimelockController
         vm.prank(registryOwner);
@@ -101,7 +101,7 @@ contract GuardedExecModuleTest is RhinestoneModuleKit, Test {
         vm.stopPrank();
         
         // Deploy module with registry and pause controller
-        guardedModule = new GuardedExecModule(address(registry), pauseController);
+        guardedModule = new GuardedExecModule(address(registry), moduleOwner);
         vm.label(address(guardedModule), "GuardedExecModule");
         
         // Create smart account
@@ -149,7 +149,7 @@ contract GuardedExecModuleTest is RhinestoneModuleKit, Test {
         vm.stopPrank();
         
         // Deploy new module with updated registry
-        guardedModule = new GuardedExecModule(address(registry), pauseController);
+        guardedModule = new GuardedExecModule(address(registry), moduleOwner);
         vm.label(address(guardedModule), "GuardedExecModule");
         
         // Install module
@@ -328,38 +328,38 @@ contract GuardedExecModuleTest is RhinestoneModuleKit, Test {
         assertFalse(guardedModule.paused(), "Should not be paused initially");
         
         // EMERGENCY: Session key compromised! Pause the module!
-        vm.prank(pauseController);
+        vm.prank(moduleOwner);
         guardedModule.pause();
         assertTrue(guardedModule.paused(), "Should be paused");
         
         // Unpause
-        vm.prank(pauseController);
+        vm.prank(moduleOwner);
         guardedModule.unpause();
         assertFalse(guardedModule.paused(), "Should not be paused after unpause");
     }
     
     /**
-     * @notice TEST 7: Only pause controller can pause module
+     * @notice TEST 7: Only owner can pause module
      */
-    function test_OnlyPauseControllerCanPause() public {
+    function test_OnlyOwnerCanPauseModule() public {
         address attacker = makeAddr("attacker");
         
         // Attacker tries to pause (should fail)
         vm.prank(attacker);
-        vm.expectRevert(GuardedExecModule.OnlyPauseController.selector);
+        vm.expectRevert();
         guardedModule.pause();
         
-        // Pause controller can pause
-        vm.prank(pauseController);
+        // Owner can pause
+        vm.prank(moduleOwner);
         guardedModule.pause();
         
         // Attacker tries to unpause (should fail)
         vm.prank(attacker);
-        vm.expectRevert(GuardedExecModule.OnlyPauseController.selector);
+        vm.expectRevert();
         guardedModule.unpause();
         
-        // Pause controller can unpause
-        vm.prank(pauseController);
+        // Owner can unpause
+        vm.prank(moduleOwner);
         guardedModule.unpause();
     }
     
