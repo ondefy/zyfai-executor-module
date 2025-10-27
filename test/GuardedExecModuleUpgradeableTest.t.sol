@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import { Test } from "forge-std/Test.sol";
+import { Test, console } from "forge-std/Test.sol";
 import { RhinestoneModuleKit, ModuleKitHelpers, AccountInstance } from "modulekit/ModuleKit.sol";
 import { MODULE_TYPE_EXECUTOR } from "modulekit/accounts/common/interfaces/IERC7579Module.sol";
 
 import { GuardedExecModuleUpgradeable } from "src/GuardedExecModuleUpgradeable.sol";
+import { GuardedExecModuleUpgradeableV2 } from "src/GuardedExecModuleUpgradeableV2.sol";
 import { TargetRegistry } from "src/TargetRegistry.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { MockDeFiPool } from "test/mocks/MockDeFiPool.sol";
@@ -13,6 +14,7 @@ import { MockERC20 } from "test/mocks/MockERC20.sol";
 import { MockSafeWallet } from "test/mocks/MockSafeWallet.sol";
 import { TestTargetRegistryWithMockSafe } from "test/mocks/TestTargetRegistryWithMockSafe.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 /**
  * @title GuardedExecModuleUpgradeableTest
@@ -20,6 +22,9 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  */
 contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     using ModuleKitHelpers for *;
+    
+    // ERC1967 implementation slot
+    bytes32 internal constant IMPLEMENTATION_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
 
     // Core contracts
     AccountInstance internal instance;
@@ -493,5 +498,122 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         vm.prank(moduleOwner);
         vm.expectRevert();
         guardedModule.updateRegistry(address(0));
+    }
+    
+    /**
+     * @notice TEST 12: Upgrade module implementation while keeping same address
+     */
+    function test_UpgradeModuleKeepsSameAddress() public {
+        address proxyAddr = address(proxy);
+        bytes32 slot = IMPLEMENTATION_SLOT;
+        
+        // Get original implementation from storage
+        address originalImpl = address(uint160(uint256(vm.load(proxyAddr, slot))));
+        console.log("Proxy Address:", proxyAddr);
+        console.log("Original Implementation:", originalImpl);
+        
+        // Verify V1
+        assertEq(guardedModule.name(), "GuardedExecModuleUpgradeable", "Should be V1");
+        
+        // Store state
+        address reg = guardedModule.getRegistry();
+        address ownerAddr = guardedModule.owner();
+        
+        // Deploy and upgrade to V2
+        GuardedExecModuleUpgradeableV2 v2 = new GuardedExecModuleUpgradeableV2();
+        vm.prank(moduleOwner);
+        guardedModule.upgradeToAndCall(
+            address(v2),
+            abi.encodeWithSelector(GuardedExecModuleUpgradeableV2.initializeV2.selector, "V2!")
+        );
+        
+        // Verify address unchanged
+        assertEq(address(proxy), proxyAddr, "Address must stay same");
+        
+        // Verify new implementation
+        address newImpl = address(uint160(uint256(vm.load(proxyAddr, slot))));
+        assertEq(newImpl, address(v2), "Implementation updated");
+        assertNotEq(newImpl, originalImpl, "Implementation changed");
+        
+        // Cast to V2
+        GuardedExecModuleUpgradeableV2 v2Module = GuardedExecModuleUpgradeableV2(proxyAddr);
+        assertEq(v2Module.name(), "GuardedExecModuleUpgradeableV2", "Is V2");
+        
+        // Verify state persisted
+        assertEq(address(v2Module.getRegistry()), reg, "Registry persisted");
+        assertEq(v2Module.owner(), ownerAddr, "Owner persisted");
+        assertEq(v2Module.upgradeMessage(), "V2!", "V2 message set");
+        
+        console.log("Upgrade successful!");
+    }
+    
+    /**
+     * @notice TEST 13: Only owner can upgrade
+     */
+    function test_OnlyOwnerCanUpgrade() public {
+        address attacker = makeAddr("attacker");
+        GuardedExecModuleUpgradeableV2 v2Implementation = new GuardedExecModuleUpgradeableV2();
+        
+        // Attacker tries to upgrade (should fail)
+        vm.prank(attacker);
+        vm.expectRevert();
+        UUPSUpgradeable(address(proxy)).upgradeToAndCall(
+            address(v2Implementation),
+            ""
+        );
+        
+        // Owner can upgrade
+        vm.prank(moduleOwner);
+        guardedModule.upgradeToAndCall(
+            address(v2Implementation),
+            ""
+        );
+        
+        // Verify upgrade was successful
+        address newImplementation = address(uint160(uint256(vm.load(address(proxy), IMPLEMENTATION_SLOT))));
+        assertEq(newImplementation, address(v2Implementation), "Implementation should be upgraded");
+    }
+    
+    /**
+     * @notice TEST 14: Storage layout compatibility after upgrade
+     */
+    function test_StorageLayoutCompatibility() public {
+        // Store some data before upgrade
+        address registryBefore = address(guardedModule.registry());
+        address ownerBefore = guardedModule.owner();
+        
+        // Upgrade to V2
+        GuardedExecModuleUpgradeableV2 v2Implementation = new GuardedExecModuleUpgradeableV2();
+        
+        vm.prank(moduleOwner);
+        guardedModule.upgradeToAndCall(
+            address(v2Implementation),
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeableV2.initializeV2.selector,
+                "Storage compatibility test"
+            )
+        );
+        
+        GuardedExecModuleUpgradeableV2 v2Module = GuardedExecModuleUpgradeableV2(address(proxy));
+        
+        // Verify storage slots are compatible
+        assertEq(
+            address(v2Module.registry()),
+            registryBefore,
+            "Registry should be at same storage slot"
+        );
+        assertEq(
+            v2Module.owner(),
+            ownerBefore,
+            "Owner should be at same storage slot"
+        );
+        
+        // Verify new storage variables work
+        assertEq(v2Module.upgradeCounter(), 1, "Upgrade counter should be set");
+        assertEq(
+            v2Module.upgradeMessage(),
+            "Storage compatibility test",
+            "Upgrade message should be set"
+        );
     }
 }
