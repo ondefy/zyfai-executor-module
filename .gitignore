@@ -9,3 +9,7 @@ docs/
 # Dotenv file
 .env
 node_modules
+
+integration-tests/node_modules
+integration-tests/artifacts
+integration-tests/typechain-types

@@ -4,6 +4,7 @@ account-abstraction/=node_modules/@ERC4337/account-abstraction/contracts/
 account-abstraction-v0.6/=node_modules/@ERC4337/account-abstraction-v0.6/contracts/
 modulekit/=lib/modulekit/src/
 @openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
+@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/
 ds-test/=node_modules/ds-test/src/
 forge-std/=lib/forge-std/src/
 solady/=node_modules/solady/src/

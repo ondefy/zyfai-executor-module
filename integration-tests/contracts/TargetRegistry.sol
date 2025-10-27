@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/governance/TimelockController.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { ISafeWallet } from "./interfaces/ISafeWallet.sol";
+import { ISafeWallet } from "./ISafeWallet.sol";
 
 /**
  * @title TargetRegistry
@@ -90,41 +90,6 @@ contract TargetRegistry is Ownable, Pausable {
             executors,
             address(0) // No admin (immutable roles)
         );
-        
-        // ========================================
-        // TESTING: Pre-whitelist AAVE and USDC operations
-        // TODO: Remove this section for production deployment
-        // ========================================
-        
-        // AAVE V3 Pool on Base
-        address aavePool = 0xA238Dd80C259a72e81d7e4664a9801593F98d1c5;
-        bytes4 supplySelector = 0x617ba037; // supply(address asset,uint256 amount,address onBehalfOf,uint16 referralCode)
-        
-        // USDC on Base
-        address usdc = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
-        bytes4 transferSelector = 0xa9059cbb; // transfer(address to, uint256 amount)
-        bytes4 transferFromSelector = 0x23b872dd; // transferFrom(address from, address to, uint256 amount)
-        bytes4 approveSelector = 0x095ea7b3; // approve(address spender, uint256 amount)
-        
-        // Pre-whitelist AAVE operations
-        whitelist[aavePool][supplySelector] = true;
-        emit TargetSelectorAdded(aavePool, supplySelector);
-        
-        // Pre-whitelist USDC operations
-        whitelist[usdc][transferSelector] = true;
-        whitelist[usdc][transferFromSelector] = true;
-        whitelist[usdc][approveSelector] = true;
-        emit TargetSelectorAdded(usdc, transferSelector);
-        emit TargetSelectorAdded(usdc, transferFromSelector);
-        emit TargetSelectorAdded(usdc, approveSelector);
-        
-        // Pre-configure USDC as restricted ERC20 token
-        restrictedERC20Tokens[usdc] = true;
-        emit ERC20TokenRestrictionAdded(usdc, true);
-        
-        // ========================================
-        // END TESTING SECTION
-        // ========================================
     }
 
     /*//////////////////////////////////////////////////////////////
