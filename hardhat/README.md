@@ -16,7 +16,7 @@ This directory contains comprehensive integration tests and deployment scripts f
 
 1. **Install dependencies:**
    ```bash
-   cd integration-tests
+   cd rhinestone
    pnpm install
    ```
 
@@ -61,7 +61,7 @@ This directory contains comprehensive integration tests and deployment scripts f
 ## 📁 Project Structure
 
 ```
-integration-tests/
+rhinestone/
 ├── contracts/              # Solidity contracts
 │   ├── GuardedExecModule.sol
 │   ├── TargetRegistry.sol

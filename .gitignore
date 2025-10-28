@@ -10,6 +10,6 @@ docs/
 .env
 node_modules
 
-integration-tests/node_modules
-integration-tests/artifacts
-integration-tests/typechain-types
+hardhat/node_modules
+hardhat/artifacts
+hardhat/typechain-types
