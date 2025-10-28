@@ -6,6 +6,7 @@
   "scripts": {
     "create-safe-account": "ts-node scripts/1-create-safe-account.ts",
     "install-upgradeable-module": "ts-node scripts/2-install-upgradeable-module.ts",
+    "create-session-key": "tsx scripts/3-create-session-key.ts",
     "compile": "hardhat compile",
     "clean": "hardhat clean"
   },
@@ -28,6 +29,7 @@
     "forge-std": "^1.1.2",
     "hardhat": "^2.19.0",
     "ts-node": "^10.9.0",
+    "tsx": "^4.7.0",
     "typescript": "^5.0.0"
   },
   "dependencies": {

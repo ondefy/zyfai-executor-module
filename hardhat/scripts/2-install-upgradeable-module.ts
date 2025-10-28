@@ -4,14 +4,14 @@ import { erc7579Actions } from 'permissionless/actions/erc7579';
 import { createPimlicoClient } from 'permissionless/clients/pimlico';
 import { privateKeyToAccount } from 'viem/accounts';
 import { base } from 'viem/chains';
-import { createPublicClient, http, encodeFunctionData } from 'viem';
+import { createPublicClient, fromHex, http, toHex } from 'viem';
 import { entryPoint07Address } from 'viem/account-abstraction';
 import dotenv from "dotenv";
 import { join } from "path";
 import { getOwnableValidator, RHINESTONE_ATTESTER_ADDRESS } from '@rhinestone/module-sdk';
 
 // Load environment variables
-dotenv.config({ path: join(__dirname, "..", "env.base") });
+dotenv.config({ path: join(__dirname, "..", ".env") });
 
 /**
  * Install GuardedExecModuleUpgradeable on Safe account
@@ -20,15 +20,15 @@ async function main() {
   console.log("🔧 Installing GuardedExecModuleUpgradeable on Safe account...");
   
   // Check environment variables
-  const privateKey = process.env.BASE_PRIVATE_KEY;
+  let privateKey = process.env.BASE_PRIVATE_KEY;
   const safeAddress = process.env.SAFE_ACCOUNT_ADDRESS;
   const moduleAddress = process.env.GUARDED_EXEC_MODULE_UPGRADEABLE_ADDRESS;
   const implAddress = process.env.GUARDED_EXEC_MODULE_UPGRADEABLE_IMPL_ADDRESS;
   
   console.log("Configuration:");
-  console.log("  Safe address:", safeAddress);
-  console.log("  Module (Proxy) address:", moduleAddress);
-  console.log("  Implementation address:", implAddress);
+  console.log("Safe address:", safeAddress);
+  console.log("Module (Proxy) address:", moduleAddress);
+  console.log("Implementation address:", implAddress);
   
   if (!privateKey || !safeAddress || !moduleAddress) {
     throw new Error("Missing required environment variables");
@@ -108,99 +108,75 @@ async function main() {
       },
     }).extend(erc7579Actions());
   
-    // Check if module is already installed
+    // Check if module is already installed using SDK method
     console.log("\n🔍 Checking if module is already installed...");
+    
     try {
-      const enabledModules = await publicClient.readContract({
-        address: loadedSafeAddress as `0x${string}`,
-        abi: [
-          {
-            inputs: [],
-            name: 'getModules',
-            outputs: [{ internalType: 'address[]', name: '', type: 'address[]' }],
-            stateMutability: 'view',
-            type: 'function',
-          },
-        ],
-        functionName: 'getModules',
+      const isInstalled = await smartAccountClient.isModuleInstalled({
+        address: moduleAddress as `0x${string}`,
+        type: 'executor',
+        context: '0x',
       });
       
-      console.log("Enabled modules:", enabledModules);
-      
-      if (enabledModules.includes(moduleAddress as `0x${string}`)) {
+      if (isInstalled) {
         console.log("⚠️  Module is already installed!");
         console.log("✅ You can use this module in your transactions.");
+        console.log(`  Module Type: executor (2)`);
+        console.log(`  Module Address: ${moduleAddress}`);
         return;
       }
+      
+      console.log("✅ Module is not installed yet, proceeding with installation...");
     } catch (error) {
       console.log("⚠️ Could not check existing modules, proceeding with installation...");
+      console.log("  Error:", (error as Error).message);
     }
     
-    // Install the module using Safe's native installModule method
-    console.log("\n📦 Installing GuardedExecModuleUpgradeable...", moduleAddress);
+    // Install the module using SDK method
+    console.log("\n📦 Installing GuardedExecModuleUpgradeable...");
+    console.log("  Module Type: executor (2)");
+    console.log("  Module Address:", moduleAddress);
     
-    const installModuleData = encodeFunctionData({
-      abi: [
-        {
-          inputs: [
-            { internalType: 'uint256', name: 'moduleTypeId', type: 'uint256' },
-            { internalType: 'address', name: 'module', type: 'address' },
-            { internalType: 'bytes', name: 'data', type: 'bytes' }
-          ],
-          name: 'installModule',
-          outputs: [],
-          stateMutability: 'nonpayable',
-          type: 'function',
-        },
-      ],
-      functionName: 'installModule',
-      args: [
-        2n, // MODULE_TYPE_EXECUTOR
-        moduleAddress as `0x${string}`,
-        '0x' // No initialization data needed
-      ],
-    });
-    console.log("📝 Install module data:", installModuleData);
-    
-    // Execute the installation transaction
-    const transaction = await smartAccountClient.sendTransaction({
-      to: loadedSafeAddress as `0x${string}`,
-      value: 0n,
-      data: installModuleData,
-    });
-    console.log("✅ Transaction submitted:", transaction);
-    
-    // Wait for execution
-    console.log("\n⏳ Waiting for confirmation...");
-    const result = await smartAccountClient.waitForUserOperationReceipt({
-      hash: transaction,
-    });
-    console.log("✅ Module installation completed:", result);
-    
-    // Verify installation
     try {
-      const enabledModules = await publicClient.readContract({
-        address: loadedSafeAddress as `0x${string}`,
-        abi: [
-          {
-            inputs: [],
-            name: 'getModules',
-            outputs: [{ internalType: 'address[]', name: '', type: 'address[]' }],
-            stateMutability: 'view',
-            type: 'function',
-          },
-        ],
-        functionName: 'getModules',
+      const userOpHash = await smartAccountClient.installModule({
+        address: moduleAddress as `0x${string}`,
+        type: 'executor',
+        context: '0x', // No initialization data needed
       });
       
-      const isNowInstalled = enabledModules.includes(moduleAddress as `0x${string}`);
+      console.log("✅ Installation transaction submitted!");
+      console.log("  UserOperation hash:", userOpHash);
+      
+      // Wait for execution
+      console.log("\n⏳ Waiting for confirmation...");
+      const result = await smartAccountClient.waitForUserOperationReceipt({
+        hash: userOpHash,
+      });
+      console.log("✅ Module installation completed!");
+      console.log("  Transaction hash:", result.receipt.transactionHash);
+      
+      // Verify installation using SDK method
+      console.log("\n🔍 Verifying installation...");
+      const isNowInstalled = await smartAccountClient.isModuleInstalled({
+        address: moduleAddress as `0x${string}`,
+        type: 'executor',
+        context: '0x',
+      });
+      
       if (isNowInstalled) {
         console.log("\n🎉 GuardedExecModuleUpgradeable successfully installed and verified!");
+        console.log(`  Module Type: executor (2)`);
+        console.log(`  Module Address: ${moduleAddress}`);
       } else {
         console.log("⚠️  Module installation verification failed");
+        console.log("  Transaction completed but module not detected as installed");
+        console.log("  Note: Sometimes there's a delay before the module is detected");
       }
-    } catch (verifyError) {
-      console.log("⚠️  Could not verify installation, but transaction completed:", (verifyError as Error).message);
+      
+    } catch (installError) {
+      console.error("\n❌ Installation failed:");
+      console.error("  Error:", (installError as Error).message);
+      throw installError;
     }
     
     console.log("\n📋 Module Details:");

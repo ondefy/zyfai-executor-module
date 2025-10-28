@@ -55,7 +55,6 @@ async function main() {
     threshold: 1,
   });
   
-      //   RHINESTONE_ATTESTER_ADDRESS, // Rhinestone Attester
   // Create Safe account using toSafeSmartAccount
   const safeAccount = await toSafeSmartAccount({
     client: publicClient,
