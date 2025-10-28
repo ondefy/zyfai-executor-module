@@ -4,7 +4,6 @@
   "description": "End-to-end integration scripts",
   "main": "index.js",
   "scripts": {
-    "generate-keys": "ts-node scripts/generate-test-key.ts",
     "create-safe-account": "ts-node scripts/1-create-safe-account.ts",
     "install-upgradeable-module": "ts-node scripts/2-install-upgradeable-module.ts",
     "compile": "hardhat compile",
