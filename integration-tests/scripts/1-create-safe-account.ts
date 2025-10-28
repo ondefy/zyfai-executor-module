@@ -41,7 +41,7 @@ async function main() {
   
   console.log("Base RPC URL:", process.env.BASE_RPC_URL);
   // Create public client with proper RPC URL
-  const rpcUrl = process.env.BASE_RPC_URL || 'https://base-mainnet.g.alchemy.com/v2/5Uo86gAvWS1DPR3voM9Q2o0JFuJU30Uc';
+  const rpcUrl = process.env.BASE_RPC_URL;
   console.log("Using RPC URL:", rpcUrl);
   
   const publicClient = createPublicClient({
@@ -67,8 +67,10 @@ async function main() {
     },
     safe4337ModuleAddress: SAFE_7579_ADDRESS,
     erc7579LaunchpadAddress: '0x7579011aB74c46090561ea277Ba79D510c6C00ff',
-    attesters: [],
-    attestersThreshold: 0,
+    attesters: [
+      RHINESTONE_ATTESTER_ADDRESS, // Rhinestone Attester
+    ],
+    attestersThreshold: 1,
     validators: [
       {
         address: ownableValidator.address,
@@ -123,7 +125,9 @@ async function main() {
         },
       },
     }).extend(erc7579Actions());
+    console.log("Smart account client:", safeAddress);
     
+
     // Deploy the account by sending a simple transaction
     console.log("Sending deployment transaction...", safeAddress);
     const deploymentTx = await smartAccountClient.sendTransaction({

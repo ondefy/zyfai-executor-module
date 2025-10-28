@@ -15,11 +15,11 @@ import { readFileSync } from "fs";
 dotenv.config({ path: join(__dirname, "..", ".env") });
 
 /**
- * Install GuardedExecModule directly using Safe's executeTransaction method
- * This bypasses the ERC7579 installModule and uses Safe's native module installation
+ * Install GuardedExecModule using Safe's native installModule method
+ * This bypasses the registry hook by using Safe's built-in module management
  */
 async function main() {
-  console.log("🔧 Installing GuardedExecModule using direct Safe execution...");
+  console.log("🔧 Installing GuardedExecModule using Safe's native installModule...");
   
   // Check environment variables
   const privateKey = process.env.BASE_PRIVATE_KEY;
@@ -38,7 +38,7 @@ async function main() {
   console.log("Account address:", account.address);
   
   // Create public client with proper RPC URL
-  const rpcUrl = process.env.BASE_RPC_URL || 'https://base-mainnet.g.alchemy.com/v2/5Uo86gAvWS1DPR3voM9Q2o0JFuJU30Uc';
+  const rpcUrl = process.env.BASE_RPC_URL;
   console.log("Using RPC URL:", rpcUrl);
   
   const publicClient = createPublicClient({
@@ -63,10 +63,10 @@ async function main() {
     },
     safe4337ModuleAddress: '0x7579EE8307284F293B1927136486880611F20002',
     erc7579LaunchpadAddress: '0x7579011aB74c46090561ea277Ba79D510c6C00ff',
-    attesters: [
-      RHINESTONE_ATTESTER_ADDRESS, // Rhinestone Attester
-    ],
-    attestersThreshold: 1,
+    // attesters: [
+    //   RHINESTONE_ATTESTER_ADDRESS, // Rhinestone Attester
+    // ],
+    // attestersThreshold: 1,
     validators: [
       {
         address: ownableValidator.address,
@@ -124,7 +124,7 @@ async function main() {
 
   // Check if module is already installed using Safe's native method
   try {
-    // Check if module is enabled using Safe's getEnabledModules
+    // Check if module is enabled using Safe's getModules
     const enabledModules = await publicClient.readContract({
       address: safeAddress as `0x${string}`,
       abi: [
@@ -153,31 +153,40 @@ async function main() {
     console.log("Proceeding with installation...");
   }
   
-  console.log("📦 Installing GuardedExecModule using Safe's enableModule...");
+  console.log("📦 Installing GuardedExecModule using Safe's native installModule...");
   
   try {
-    // Use Safe's native enableModule method instead of ERC7579 installModule
-    const enableModuleData = encodeFunctionData({
+    // Use Safe's native installModule method
+    // MODULE_TYPE_EXECUTOR = 2
+    const installModuleData = encodeFunctionData({
       abi: [
         {
-          inputs: [{ internalType: 'address', name: 'module', type: 'address' }],
-          name: 'enableModule',
+          inputs: [
+            { internalType: 'uint256', name: 'moduleTypeId', type: 'uint256' },
+            { internalType: 'address', name: 'module', type: 'address' },
+            { internalType: 'bytes', name: 'data', type: 'bytes' }
+          ],
+          name: 'installModule',
           outputs: [],
           stateMutability: 'nonpayable',
           type: 'function',
         },
       ],
-      functionName: 'enableModule',
-      args: [moduleAddress as `0x${string}`],
+      functionName: 'installModule',
+      args: [
+        2n, // MODULE_TYPE_EXECUTOR (converted to bigint)
+        moduleAddress as `0x${string}`,
+        '0x' // No initialization data needed
+      ],
     });
     
-    console.log("Enable module data:", enableModuleData);
+    console.log("Install module data:", installModuleData);
     
     // Execute the transaction through the Safe account
     const transaction = await smartAccountClient.sendTransaction({
       to: safeAddress as `0x${string}`,
       value: 0n,
-      data: enableModuleData,
+      data: installModuleData,
     });
     
     console.log("Transaction submitted:", transaction);

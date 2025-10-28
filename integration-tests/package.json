@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "generate-keys": "ts-node scripts/generate-test-key.ts",
-    "create-safe-account": "ts-node scripts/create-safe-account.ts",
+    "create-safe-account": "ts-node scripts/1-create-safe-account.ts",
+    "install-upgradeable-module": "ts-node scripts/2-install-upgradeable-module.ts",
     "create-safe-account-no-registry": "ts-node scripts/create-safe-account-no-registry.ts",
     "create-safe-account-simple": "ts-node scripts/create-safe-account-simple.ts",
     "remove-registry-hook": "ts-node scripts/remove-registry-hook.ts",

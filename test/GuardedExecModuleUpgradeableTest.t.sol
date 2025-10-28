@@ -509,8 +509,6 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         
         // Get original implementation from storage
         address originalImpl = address(uint160(uint256(vm.load(proxyAddr, slot))));
-        console.log("Proxy Address:", proxyAddr);
-        console.log("Original Implementation:", originalImpl);
         
         // Verify V1
         assertEq(guardedModule.name(), "GuardedExecModuleUpgradeable", "Should be V1");
@@ -521,6 +519,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         
         // Deploy and upgrade to V2
         GuardedExecModuleUpgradeableV2 v2 = new GuardedExecModuleUpgradeableV2();
+        
         vm.prank(moduleOwner);
         guardedModule.upgradeToAndCall(
             address(v2),
@@ -528,7 +527,8 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         );
         
         // Verify address unchanged
-        assertEq(address(proxy), proxyAddr, "Address must stay same");
+        address proxyAfterUpgrade = address(proxy);
+        assertEq(proxyAfterUpgrade, proxyAddr, "Address must stay same");
         
         // Verify new implementation
         address newImpl = address(uint160(uint256(vm.load(proxyAddr, slot))));
@@ -543,8 +543,6 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         assertEq(address(v2Module.getRegistry()), reg, "Registry persisted");
         assertEq(v2Module.owner(), ownerAddr, "Owner persisted");
         assertEq(v2Module.upgradeMessage(), "V2!", "V2 message set");
-        
-        console.log("Upgrade successful!");
     }
     
     /**

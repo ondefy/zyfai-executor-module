@@ -40,7 +40,7 @@ async function main() {
   console.log("Account address:", account.address);
   
   // Create public client with proper RPC URL
-  const rpcUrl = process.env.BASE_RPC_URL || 'https://base-mainnet.g.alchemy.com/v2/5Uo86gAvWS1DPR3voM9Q2o0JFuJU30Uc';
+  const rpcUrl = process.env.BASE_RPC_URL;
   console.log("Using RPC URL:", rpcUrl);
   
   const publicClient = createPublicClient({
