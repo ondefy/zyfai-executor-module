@@ -4,18 +4,16 @@ pragma solidity ^0.8.23;
 import { Test, console } from "forge-std/Test.sol";
 import { RhinestoneModuleKit, ModuleKitHelpers, AccountInstance } from "modulekit/ModuleKit.sol";
 import { MODULE_TYPE_EXECUTOR } from "modulekit/accounts/common/interfaces/IERC7579Module.sol";
-
-import { GuardedExecModuleUpgradeable } from "src/GuardedExecModuleUpgradeable.sol";
-import { GuardedExecModuleUpgradeableV2 } from "src/GuardedExecModuleUpgradeableV2.sol";
-import { TargetRegistry } from "src/TargetRegistry.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { MockDeFiPool } from "test/mocks/MockDeFiPool.sol";
 import { MockERC20 } from "test/mocks/MockERC20.sol";
 import { MockSafeWallet } from "test/mocks/MockSafeWallet.sol";
 import { TestTargetRegistryWithMockSafe } from "test/mocks/TestTargetRegistryWithMockSafe.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-
+import { TargetRegistry } from "src/registry/TargetRegistry.sol";
+import { GuardedExecModuleUpgradeable } from "src/module/GuardedExecModuleUpgradeable.sol";
+import { MockGuardedExecModuleUpgradeableV2 } from "test/mocks/MockGuardedExecModuleUpgradeableV2.sol";
 /**
  * @title GuardedExecModuleUpgradeableTest
  * @notice Test the GuardedExecModuleUpgradeable with UUPS upgradeable pattern
@@ -517,13 +515,13 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         address reg = guardedModule.getRegistry();
         address ownerAddr = guardedModule.owner();
         
-        // Deploy and upgrade to V2
-        GuardedExecModuleUpgradeableV2 v2 = new GuardedExecModuleUpgradeableV2();
+        // Deploy and upgrade to V2 (using mock contract for testing)
+        MockGuardedExecModuleUpgradeableV2 v2 = new MockGuardedExecModuleUpgradeableV2();
         
         vm.prank(moduleOwner);
         guardedModule.upgradeToAndCall(
             address(v2),
-            abi.encodeWithSelector(GuardedExecModuleUpgradeableV2.initializeV2.selector, "V2!")
+            abi.encodeWithSelector(MockGuardedExecModuleUpgradeableV2.initializeV2.selector, "V2!")
         );
         
         // Verify address unchanged
@@ -536,8 +534,8 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         assertNotEq(newImpl, originalImpl, "Implementation changed");
         
         // Cast to V2
-        GuardedExecModuleUpgradeableV2 v2Module = GuardedExecModuleUpgradeableV2(proxyAddr);
-        assertEq(v2Module.name(), "GuardedExecModuleUpgradeableV2", "Is V2");
+        MockGuardedExecModuleUpgradeableV2 v2Module = MockGuardedExecModuleUpgradeableV2(proxyAddr);
+        assertEq(v2Module.name(), "MockGuardedExecModuleUpgradeableV2", "Is V2");
         
         // Verify state persisted
         assertEq(address(v2Module.getRegistry()), reg, "Registry persisted");
@@ -550,7 +548,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
      */
     function test_OnlyOwnerCanUpgrade() public {
         address attacker = makeAddr("attacker");
-        GuardedExecModuleUpgradeableV2 v2Implementation = new GuardedExecModuleUpgradeableV2();
+        MockGuardedExecModuleUpgradeableV2 v2Implementation = new MockGuardedExecModuleUpgradeableV2();
         
         // Attacker tries to upgrade (should fail)
         vm.prank(attacker);
@@ -580,19 +578,19 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         address registryBefore = address(guardedModule.registry());
         address ownerBefore = guardedModule.owner();
         
-        // Upgrade to V2
-        GuardedExecModuleUpgradeableV2 v2Implementation = new GuardedExecModuleUpgradeableV2();
+        // Upgrade to V2 (using mock contract for testing)
+        MockGuardedExecModuleUpgradeableV2 v2Implementation = new MockGuardedExecModuleUpgradeableV2();
         
         vm.prank(moduleOwner);
         guardedModule.upgradeToAndCall(
             address(v2Implementation),
             abi.encodeWithSelector(
-                GuardedExecModuleUpgradeableV2.initializeV2.selector,
+                MockGuardedExecModuleUpgradeableV2.initializeV2.selector,
                 "Storage compatibility test"
             )
         );
         
-        GuardedExecModuleUpgradeableV2 v2Module = GuardedExecModuleUpgradeableV2(address(proxy));
+        MockGuardedExecModuleUpgradeableV2 v2Module = MockGuardedExecModuleUpgradeableV2(address(proxy));
         
         // Verify storage slots are compatible
         assertEq(

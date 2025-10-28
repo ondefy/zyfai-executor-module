@@ -7,15 +7,15 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ERC7579ExecutorBase } from "modulekit/Modules.sol";
 import { Execution } from "modulekit/accounts/erc7579/lib/ExecutionLib.sol";
-import { TargetRegistry } from "./TargetRegistry.sol";
+import { TargetRegistry } from "../../src/registry/TargetRegistry.sol";
 
 /**
- * @title GuardedExecModuleUpgradeableV2
+ * @title MockGuardedExecModuleUpgradeableV2
  * @author Zyfi
- * @notice V2 version with additional features for testing upgrades
- * @dev This is a test version to demonstrate upgradeability
+ * @notice MOCK contract for testing upgradeability - NOT for production use
+ * @dev This is a test-only mock contract used in Foundry tests to verify upgrade functionality
  */
-contract GuardedExecModuleUpgradeableV2 is 
+contract MockGuardedExecModuleUpgradeableV2 is 
     ERC7579ExecutorBase,
     OwnableUpgradeable,
     PausableUpgradeable,
@@ -34,8 +34,8 @@ contract GuardedExecModuleUpgradeableV2 is
     //////////////////////////////////////////////////////////////*/
     
     TargetRegistry public registry;
-    uint256 public upgradeCounter; // NEW in V2
-    string public upgradeMessage; // NEW in V2
+    uint256 public upgradeCounter; // NEW in V2 - for testing upgrade tracking
+    string public upgradeMessage; // NEW in V2 - for testing upgrade initialization
 
     /*//////////////////////////////////////////////////////////////
                                ERRORS
@@ -64,6 +64,7 @@ contract GuardedExecModuleUpgradeableV2 is
 
     /**
      * @notice V2 specific initialization (called after upgrade)
+     * @dev Used in tests to initialize new storage variables after upgrade
      */
     function initializeV2(string memory _upgradeMessage) external reinitializer(2) {
         upgradeMessage = _upgradeMessage;
@@ -71,7 +72,7 @@ contract GuardedExecModuleUpgradeableV2 is
     }
 
     function name() external pure returns (string memory) {
-        return "GuardedExecModuleUpgradeableV2";
+        return "MockGuardedExecModuleUpgradeableV2";
     }
     
     function version() external pure returns (string memory) {
@@ -95,7 +96,7 @@ contract GuardedExecModuleUpgradeableV2 is
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {
-        upgradeCounter++; // Track upgrades
+        upgradeCounter++; // Track upgrades for testing
     }
 
     function onInstall(bytes calldata) external override {}
@@ -158,3 +159,4 @@ contract GuardedExecModuleUpgradeableV2 is
         registry = TargetRegistry(newRegistry);
     }
 }
+

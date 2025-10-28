@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/governance/TimelockController.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { ISafeWallet } from "./interfaces/ISafeWallet.sol";
+import { ISafeWallet } from "../interfaces/ISafeWallet.sol";
 
 /**
  * @title TargetRegistryProduction

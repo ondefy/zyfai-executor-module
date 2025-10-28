@@ -2,7 +2,7 @@
 pragma solidity ^0.8.23;
 
 import { Script, console } from "forge-std/Script.sol";
-import { GuardedExecModuleUpgradeable } from "../src/GuardedExecModuleUpgradeable.sol";
+import { GuardedExecModuleUpgradeable } from "../src/module/GuardedExecModuleUpgradeable.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract DeployUpgradeableSimple is Script {

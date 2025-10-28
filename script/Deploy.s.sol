@@ -3,8 +3,8 @@ pragma solidity ^0.8.23;
 
 import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
-import {TargetRegistry} from "../src/TargetRegistry.sol";
-import {GuardedExecModule} from "../src/GuardedExecModule.sol";
+import {TargetRegistry} from "../src/registry/TargetRegistry.sol";
+import {GuardedExecModule} from "../src/module/GuardedExecModule.sol";
 
 /**
  * @title Deploy

@@ -1,29 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ERC7579ExecutorBase } from "modulekit/Modules.sol";
 import { Execution } from "modulekit/accounts/erc7579/lib/ExecutionLib.sol";
-import { TargetRegistry } from "./TargetRegistry.sol";
+import { TargetRegistry } from "../registry/TargetRegistry.sol";
 
 /**
- * @title GuardedExecModuleUpgradeable
+ * @title GuardedExecModule
  * @author Zyfi
- * @notice GuardedExecModule executor module using OpenZeppelin UUPS upgradeable pattern
+ * @notice GuardedExecModule executor module using OpenZeppelin TimelockController
  * @dev This module allows session keys to execute whitelisted DeFi operations
  *      while maintaining smart account context (msg.sender = smart account).
  *      Pausable functionality provides emergency stop for compromised session keys.
- *      Upgradeable via UUPS pattern to allow fixing bugs and adding features.
  */
-contract GuardedExecModuleUpgradeable is 
-    ERC7579ExecutorBase,
-    OwnableUpgradeable,
-    PausableUpgradeable,
-    UUPSUpgradeable
-{
+contract GuardedExecModule is ERC7579ExecutorBase, Ownable, Pausable {
     /*//////////////////////////////////////////////////////////////
                                CONSTANTS
     //////////////////////////////////////////////////////////////*/
@@ -42,9 +35,9 @@ contract GuardedExecModuleUpgradeable is
                                STORAGE
     //////////////////////////////////////////////////////////////*/
     
-    /// @notice Registry for target + selector whitelist verification
-    /// @dev Can be changed via upgrade in case of registry migration
-    TargetRegistry public registry;
+    /// @notice Immutable registry for target + selector whitelist verification
+    /// @dev Set once in constructor, cannot be changed to prevent malicious overwrites
+    TargetRegistry public immutable registry;
 
     /*//////////////////////////////////////////////////////////////
                                ERRORS
@@ -60,29 +53,14 @@ contract GuardedExecModuleUpgradeable is
                              CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
     
-    /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
-        // Disable initialization in implementation contract
-        _disableInitializers();
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                             INITIALIZER
-    //////////////////////////////////////////////////////////////*/
-    
     /**
-     * @notice Initialize the module with registry and owner
-     * @dev Can only be called once by the proxy
+     * @notice Initialize the module with immutable registry and owner
+     * @dev Registry address is set once and cannot be changed
      * @param _registry Address of the TargetRegistry contract
-     * @param _owner Address that can pause/unpause and upgrade (should be multisig)
+     * @param _owner Address that can pause/unpause (should be multisig)
      */
-    function initialize(address _registry, address _owner) external initializer {
+    constructor(address _registry, address _owner) Ownable(_owner) {
         if (_registry == address(0)) revert InvalidRegistry();
-        
-        __Ownable_init(_owner);
-        __Pausable_init();
-        __UUPSUpgradeable_init();
-        
         registry = TargetRegistry(_registry);
     }
 
@@ -95,7 +73,7 @@ contract GuardedExecModuleUpgradeable is
      * @return Module name
      */
     function name() external pure returns (string memory) {
-        return "GuardedExecModuleUpgradeable";
+        return "GuardedExecModule";
     }
     
     /**
@@ -103,7 +81,7 @@ contract GuardedExecModuleUpgradeable is
      * @return Semantic version string
      */
     function version() external pure returns (string memory) {
-        return "2.0.0";
+        return "1.0.0";
     }
 
     /**
@@ -117,7 +95,7 @@ contract GuardedExecModuleUpgradeable is
 
     /**
      * @notice Checks if the module is initialized for a smart account
-     * @dev Always returns true as configuration is immutable per account
+     * @dev Always returns true as configuration is immutable
      * @return True (always initialized)
      */
     function isInitialized(address) external pure override returns (bool) {
@@ -146,26 +124,15 @@ contract GuardedExecModuleUpgradeable is
     }
 
     /*//////////////////////////////////////////////////////////////
-                        UPGRADE FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-    
-    /**
-     * @notice Authorize an upgrade
-     * @dev Only owner can authorize upgrades
-     * @param newImplementation The address of the new implementation
-     */
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
-
-    /*//////////////////////////////////////////////////////////////
                         LIFECYCLE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
     
     /**
      * @notice Module installation hook (no-op)
-     * @dev Registry is set during initialization, no per-account configuration needed
+     * @dev Registry is immutable, no per-account configuration needed
      */
     function onInstall(bytes calldata) external override {
-        // No-op: Configuration is set during initialization
+        // No-op: Configuration is immutable and set at deployment
     }
 
     /**
@@ -273,14 +240,5 @@ contract GuardedExecModuleUpgradeable is
     function getRegistry() external view returns (address) {
         return address(registry);
     }
-
-    /**
-     * @notice Update the registry address (for migration)
-     * @dev Only owner can update the registry
-     * @param newRegistry The new registry address
-     */
-    function updateRegistry(address newRegistry) external onlyOwner {
-        if (newRegistry == address(0)) revert InvalidRegistry();
-        registry = TargetRegistry(newRegistry);
-    }
 }
+

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.23;
 
 import { Test } from "forge-std/Test.sol";
-import { TargetRegistry } from "src/TargetRegistry.sol";
+import { TargetRegistry } from "src/registry/TargetRegistry.sol";
 import { MockSafeWallet } from "test/mocks/MockSafeWallet.sol";
 import { TestTargetRegistryWithMockSafe } from "test/mocks/TestTargetRegistryWithMockSafe.sol";
 
