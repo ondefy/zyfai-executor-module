@@ -6,7 +6,11 @@
   "scripts": {
     "create-safe-account": "ts-node scripts/1-create-safe-account.ts",
     "install-upgradeable-module": "ts-node scripts/2-install-upgradeable-module.ts",
-    "create-session-key": "tsx scripts/3-create-session-key.ts",
+    "create-session-key-module": "tsx scripts/3-create-module-session-key.ts",
+    "whitelist-registry": "tsx scripts/4-whitelist-registry.ts",
+    "execute-whitelist": "tsx scripts/5-execute-whitelist.ts",
+    "create-session-key-withdraw": "tsx scripts/session-key-without-module-demo/create-session-key-withdraw.ts",
+    "create-session-key-approve": "tsx scripts/session-key-without-module-demo/create-session-key-approve.ts",
     "compile": "hardhat compile",
     "clean": "hardhat clean"
   },
@@ -39,7 +43,7 @@
     "@rhinestone/modulekit": "^0.5.1",
     "dotenv": "^16.3.0",
     "ethers": "^6.8.0",
-    "permissionless": "^0.2.37",
-    "viem": "^2.37.8"
+    "permissionless": "^0.2.0",
+    "viem": "^2.21.0"
   }
 }

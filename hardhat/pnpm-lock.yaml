@@ -27,10 +27,10 @@ importers:
         specifier: ^6.8.0
         version: 6.15.0(bufferutil@4.0.9)(utf-8-validate@5.0.10)
       permissionless:
-        specifier: ^0.2.37
+        specifier: ^0.2.0
         version: 0.2.57(viem@2.38.2(bufferutil@4.0.9)(typescript@5.9.3)(utf-8-validate@5.0.10))
       viem:
-        specifier: ^2.37.8
+        specifier: ^2.21.0
         version: 2.38.2(bufferutil@4.0.9)(typescript@5.9.3)(utf-8-validate@5.0.10)
     devDependencies:
       '@nomicfoundation/hardhat-toolbox':

@@ -1,16 +1,14 @@
 import { 
   getOwnableValidator, 
-  getAccount, 
   RHINESTONE_ATTESTER_ADDRESS
 } from '@rhinestone/module-sdk';
 import { toSafeSmartAccount } from 'permissionless/accounts';
-import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
+import { privateKeyToAccount } from 'viem/accounts';
 import { base } from 'viem/chains';
 import { createPublicClient, createWalletClient, http, parseEther, fromHex, toHex } from 'viem';
 import { entryPoint07Address } from 'viem/account-abstraction';
 import dotenv from "dotenv";
 import { join } from "path";
-import { readFileSync, writeFileSync } from "fs";
 
 // Load environment variables
 dotenv.config({ path: join(__dirname, "..", ".env") });
