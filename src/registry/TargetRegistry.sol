@@ -29,7 +29,11 @@ contract TargetRegistry is Ownable, Pausable {
     mapping(address => mapping(bytes4 => bytes32)) public targetSelectorToOpId;
     
     /// @notice ERC20 tokens with transfer restrictions (e.g., USDC)
-    mapping(address => bool) public restrictedERC20Tokens;
+    mapping(address => bool) public allowedERC20Tokens;
+    
+    /// @notice Allowed recipients for specific ERC20 tokens
+    /// @dev For restricted tokens, this maps: token => recipient => is allowed
+    mapping(address => mapping(address => bool)) public allowedERC20TokenRecipients;
 
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
@@ -56,6 +60,12 @@ contract TargetRegistry is Ownable, Pausable {
         address indexed token,
         bool restricted
     );
+    
+    event ERC20TokenRecipientAuthorized(
+        address indexed token,
+        address indexed recipient,
+        bool authorized
+    );
 
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
@@ -67,6 +77,9 @@ contract TargetRegistry is Ownable, Pausable {
     error NotWhitelisted();
     error UnauthorizedERC20Transfer(address token, address to);
     error InvalidERC20Token();
+    error InvalidRecipient();
+    error EmptyBatch();
+    error LengthMismatch();
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -90,45 +103,10 @@ contract TargetRegistry is Ownable, Pausable {
             executors,
             address(0) // No admin (immutable roles)
         );
-        
-        // ========================================
-        // TESTING: Pre-whitelist AAVE and USDC operations
-        // TODO: Remove this section for production deployment
-        // ========================================
-        
-        // AAVE V3 Pool on Base
-        address aavePool = 0xA238Dd80C259a72e81d7e4664a9801593F98d1c5;
-        bytes4 supplySelector = 0x617ba037; // supply(address asset,uint256 amount,address onBehalfOf,uint16 referralCode)
-        
-        // USDC on Base
-        address usdc = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
-        bytes4 transferSelector = 0xa9059cbb; // transfer(address to, uint256 amount)
-        bytes4 transferFromSelector = 0x23b872dd; // transferFrom(address from, address to, uint256 amount)
-        bytes4 approveSelector = 0x095ea7b3; // approve(address spender, uint256 amount)
-        
-        // Pre-whitelist AAVE operations
-        whitelist[aavePool][supplySelector] = true;
-        emit TargetSelectorAdded(aavePool, supplySelector);
-        
-        // Pre-whitelist USDC operations
-        whitelist[usdc][transferSelector] = true;
-        whitelist[usdc][transferFromSelector] = true;
-        whitelist[usdc][approveSelector] = true;
-        emit TargetSelectorAdded(usdc, transferSelector);
-        emit TargetSelectorAdded(usdc, transferFromSelector);
-        emit TargetSelectorAdded(usdc, approveSelector);
-        
-        // Pre-configure USDC as restricted ERC20 token
-        restrictedERC20Tokens[usdc] = true;
-        emit ERC20TokenRestrictionAdded(usdc, true);
-        
-        // ========================================
-        // END TESTING SECTION
-        // ========================================
     }
 
     /*//////////////////////////////////////////////////////////////
-                          PAUSE FUNCTIONS
+                          EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
     
     /**
@@ -146,40 +124,64 @@ contract TargetRegistry is Ownable, Pausable {
     function unpause() external onlyOwner {
         _unpause();
     }
-
-    /*//////////////////////////////////////////////////////////////
-                        ERC20 RESTRICTION FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
     
     /**
-     * @notice Add ERC20 token to restricted list (e.g., USDC)
-     * @dev Only owner can add restricted tokens
-     * @param token The ERC20 token address
+     * @notice Add ERC20 token(s) to allowed list (batch operation)
+     * @dev Only owner can add allowed tokens. Pass array of 1 for single token.
+     * @param tokens Array of ERC20 token addresses
      */
-    function addRestrictedERC20Token(address token) external onlyOwner {
-        if (token == address(0)) revert InvalidERC20Token();
-        if (restrictedERC20Tokens[token]) revert AlreadyWhitelisted();
-        
-        restrictedERC20Tokens[token] = true;
-        emit ERC20TokenRestrictionAdded(token, true);
+    function addAllowedERC20Token(address[] memory tokens) external onlyOwner {
+        uint256 length = tokens.length;
+        for (uint256 i = 0; i < length;) {
+            _addAllowedERC20Token(tokens[i]);
+            unchecked { ++i; }
+        }
     }
     
     /**
-     * @notice Remove ERC20 token from restricted list
-     * @dev Only owner can remove restricted tokens
-     * @param token The ERC20 token address
+     * @notice Remove ERC20 token(s) from allowed list (batch operation)
+     * @dev Only owner can remove allowed tokens. Pass array of 1 for single token.
+     * @param tokens Array of ERC20 token addresses
      */
-    function removeRestrictedERC20Token(address token) external onlyOwner {
-        if (token == address(0)) revert InvalidERC20Token();
-        if (!restrictedERC20Tokens[token]) revert NotWhitelisted();
-        
-        restrictedERC20Tokens[token] = false;
-        emit ERC20TokenRestrictionAdded(token, false);
+    function removeAllowedERC20Token(address[] memory tokens) external onlyOwner {
+        uint256 length = tokens.length;
+        for (uint256 i = 0; i < length;) {
+            _removeAllowedERC20Token(tokens[i]);
+            unchecked { ++i; }
+        }
+    }
+    
+    /**
+     * @notice Add authorized recipient(s) for a specific ERC20 token (batch operation)
+     * @dev Only owner can add authorized recipients. Token must be in allowedERC20Tokens. Pass array of 1 for single recipient.
+     * @param token The ERC20 token address
+     * @param recipients Array of recipient addresses that will be authorized to receive the token
+     */
+    function addAllowedERC20TokenRecipient(address token, address[] memory recipients) external onlyOwner {
+        uint256 length = recipients.length;
+        for (uint256 i = 0; i < length;) {
+            _addAllowedERC20TokenRecipient(token, recipients[i]);
+            unchecked { ++i; }
+        }
+    }
+    
+    /**
+     * @notice Remove authorized recipient(s) for a specific ERC20 token (batch operation)
+     * @dev Only owner can remove authorized recipients. Pass array of 1 for single recipient.
+     * @param token The ERC20 token address
+     * @param recipients Array of recipient addresses to remove from authorized list
+     */
+    function removeAllowedERC20TokenRecipient(address token, address[] memory recipients) external onlyOwner {
+        uint256 length = recipients.length;
+        for (uint256 i = 0; i < length;) {
+            _removeAllowedERC20TokenRecipient(token, recipients[i]);
+            unchecked { ++i; }
+        }
     }
     
     /**
      * @notice Check if ERC20 transfer is authorized for restricted tokens
-     * @dev For restricted tokens, `to` must be smart wallet or one of its owners
+     * @dev For restricted tokens, `to` must be smart wallet, one of its owners, or an explicitly authorized recipient
      * @param token The ERC20 token address
      * @param to The recipient address
      * @param smartWallet The smart wallet address
@@ -190,28 +192,172 @@ contract TargetRegistry is Ownable, Pausable {
         address to,
         address smartWallet
     ) external view returns (bool) {
-        // If token is not restricted, allow all transfers
-        if (!restrictedERC20Tokens[token]) {
+        // If token is not in allowed list, allow all transfers
+        if (!allowedERC20Tokens[token]) {
             return true;
         }
         
-        // // For restricted tokens, check if `to` is authorized
-        return _isAuthorizedRecipient(to, smartWallet);
+        // For allowed tokens (with restrictions), check if `to` is authorized
+        // Pass token parameter to check allowedERC20TokenRecipients
+        return _isAuthorizedRecipient(to, smartWallet, token);
+    }
+    
+    /**
+     * @notice Schedule adding target+selector(s) to whitelist (batch operation)
+     * @dev Can only be called when not paused. Pass array of 1 for single operation.
+     * @param targets Array of contract addresses
+     * @param selectors Array of function selectors
+     * @return operationIds Array of operation IDs from TimelockController
+     */
+    function scheduleAdd(address[] memory targets, bytes4[] memory selectors) 
+        external 
+        onlyOwner 
+        whenNotPaused
+        returns (bytes32[] memory operationIds) 
+    {
+        uint256 length = targets.length;
+        if (length == 0) revert EmptyBatch();
+        if (length != selectors.length) revert LengthMismatch();
+        
+        operationIds = new bytes32[](length);
+        for (uint256 i = 0; i < length;) {
+            operationIds[i] = _scheduleAdd(targets[i], selectors[i]);
+            unchecked { ++i; }
+        }
+    }
+    
+    /**
+     * @notice Schedule removing target+selector(s) from whitelist (batch operation)
+     * @dev Can only be called when not paused. Pass array of 1 for single operation.
+     * @param targets Array of contract addresses
+     * @param selectors Array of function selectors
+     * @return operationIds Array of operation IDs from TimelockController
+     */
+    function scheduleRemove(address[] memory targets, bytes4[] memory selectors) 
+        external 
+        onlyOwner 
+        whenNotPaused
+        returns (bytes32[] memory operationIds) 
+    {
+        uint256 length = targets.length;
+        if (length == 0) revert EmptyBatch();
+        if (length != selectors.length) revert LengthMismatch();
+        
+        operationIds = new bytes32[](length);
+        for (uint256 i = 0; i < length;) {
+            operationIds[i] = _scheduleRemove(targets[i], selectors[i]);
+            unchecked { ++i; }
+        }
+    }
+
+    /**
+     * @notice Execute scheduled operation(s) (batch operation)
+     * @dev Anyone can call after timelock. Pass array of 1 for single operation.
+     * @param targets Array of target addresses
+     * @param selectors Array of selectors
+     */
+    function executeOperation(address[] memory targets, bytes4[] memory selectors) external {
+        uint256 length = targets.length;
+        if (length == 0) revert EmptyBatch();
+        if (length != selectors.length) revert LengthMismatch();
+        
+        for (uint256 i = 0; i < length;) {
+            _executeOperation(targets[i], selectors[i]);
+            unchecked { ++i; }
+        }
+    }
+    
+    /**
+     * @notice Cancel pending operation(s) (batch operation)
+     * @dev Only owner can cancel. Pass array of 1 for single operation.
+     * @param targets Array of target addresses
+     * @param selectors Array of selectors
+     */
+    function cancelOperation(address[] memory targets, bytes4[] memory selectors) external onlyOwner {
+        uint256 length = targets.length;
+        if (length == 0) revert EmptyBatch();
+        if (length != selectors.length) revert LengthMismatch();
+        
+        for (uint256 i = 0; i < length;) {
+            _cancelOperation(targets[i], selectors[i]);
+            unchecked { ++i; }
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                          INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+    
+    /**
+     * @notice Internal function to add ERC20 token to allowed list
+     * @dev Internal implementation for single token addition
+     * @param token The ERC20 token address
+     */
+    function _addAllowedERC20Token(address token) internal {
+        if (token == address(0)) revert InvalidERC20Token();
+        if (allowedERC20Tokens[token]) revert AlreadyWhitelisted();
+        
+        allowedERC20Tokens[token] = true;
+        emit ERC20TokenRestrictionAdded(token, true);
+    }
+    
+    /**
+     * @notice Internal function to remove ERC20 token from allowed list
+     * @dev Internal implementation for single token removal
+     * @param token The ERC20 token address
+     */
+    function _removeAllowedERC20Token(address token) internal {
+        if (token == address(0)) revert InvalidERC20Token();
+        if (!allowedERC20Tokens[token]) revert NotWhitelisted();
+        
+        allowedERC20Tokens[token] = false;
+        emit ERC20TokenRestrictionAdded(token, false);
+    }
+    
+    /**
+     * @notice Internal function to add authorized recipient for ERC20 token
+     * @dev Internal implementation for single recipient addition
+     * @param token The ERC20 token address
+     * @param recipient The recipient address
+     */
+    function _addAllowedERC20TokenRecipient(address token, address recipient) internal {
+        if (token == address(0)) revert InvalidERC20Token();
+        if (recipient == address(0)) revert InvalidRecipient();
+        if (!allowedERC20Tokens[token]) revert NotWhitelisted(); // Token must be in allowedERC20Tokens
+        if (allowedERC20TokenRecipients[token][recipient]) revert AlreadyWhitelisted();
+        
+        allowedERC20TokenRecipients[token][recipient] = true;
+        emit ERC20TokenRecipientAuthorized(token, recipient, true);
+    }
+    
+    /**
+     * @notice Internal function to remove authorized recipient for ERC20 token
+     * @dev Internal implementation for single recipient removal
+     * @param token The ERC20 token address
+     * @param recipient The recipient address
+     */
+    function _removeAllowedERC20TokenRecipient(address token, address recipient) internal {
+        if (token == address(0)) revert InvalidERC20Token();
+        if (recipient == address(0)) revert InvalidRecipient();
+        if (!allowedERC20TokenRecipients[token][recipient]) revert NotWhitelisted();
+        
+        allowedERC20TokenRecipients[token][recipient] = false;
+        emit ERC20TokenRecipientAuthorized(token, recipient, false);
     }
     
     /**
      * @notice Internal function to check if recipient is authorized
-     * @dev Checks if `to` is the smart wallet itself or one of its owners
+     * @dev Checks if `to` is the smart wallet itself, one of its owners, or an explicitly authorized recipient
      * @param to The recipient address
      * @param smartWallet The smart wallet address
+     * @param token The ERC20 token address (for checking allowedERC20TokenRecipients)
      * @return True if authorized
      */
-    function _isAuthorizedRecipient(address to, address smartWallet) 
-        internal 
-        view 
-        virtual
-        returns (bool) 
-    {
+    function _isAuthorizedRecipient(
+        address to, 
+        address smartWallet,
+        address token
+    ) internal view virtual returns (bool) {
         // Allow transfer to smart wallet itself
         if (to == smartWallet) {
             return true;
@@ -227,30 +373,25 @@ contract TargetRegistry is Ownable, Pausable {
                 unchecked { ++i; } // Safe: i < length, cannot overflow
             }
         } catch {
-            // If getOwners() fails, only allow transfer to smart wallet itself
-            return false;
+            // If getOwners() fails, continue to next check
+        }
+        
+        // NEW: Check if `to` is an explicitly authorized recipient for this token
+        if (allowedERC20TokenRecipients[token][to]) {
+            return true;
         }
         
         return false;
     }
-
-    /*//////////////////////////////////////////////////////////////
-                          SCHEDULING FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
     
     /**
-     * @notice Schedule adding a target+selector to whitelist (via TimelockController)
-     * @dev Can only be called when not paused (protection against compromised owner)
+     * @notice Internal function to schedule adding a target+selector to whitelist
+     * @dev Internal implementation for single operation scheduling
      * @param target The contract address
      * @param selector The function selector
      * @return operationId The operation ID from TimelockController
      */
-    function scheduleAdd(address target, bytes4 selector) 
-        external 
-        onlyOwner 
-        whenNotPaused
-        returns (bytes32 operationId) 
-    {
+    function _scheduleAdd(address target, bytes4 selector) internal returns (bytes32 operationId) {
         if (target == address(0)) revert InvalidTarget();
         if (selector == bytes4(0)) revert InvalidSelector();
         if (whitelist[target][selector]) revert AlreadyWhitelisted();
@@ -264,11 +405,11 @@ contract TargetRegistry is Ownable, Pausable {
         
         // Schedule via TimelockController
         operationId = timelock.hashOperation(
-            address(this), // target
-            0, // value
-            data, // data
-            bytes32(0), // predecessor
-            bytes32(uint256(uint160(target)) ^ uint256(uint32(selector))) // salt (unique per target+selector)
+            address(this),
+            0,
+            data,
+            bytes32(0),
+            bytes32(uint256(uint160(target)) ^ uint256(uint32(selector)))
         );
         
         timelock.schedule(
@@ -294,18 +435,13 @@ contract TargetRegistry is Ownable, Pausable {
     }
     
     /**
-     * @notice Schedule removing a target+selector from whitelist
-     * @dev Can only be called when not paused (protection against compromised owner)
+     * @notice Internal function to schedule removing a target+selector from whitelist
+     * @dev Internal implementation for single operation scheduling
      * @param target The contract address
      * @param selector The function selector
      * @return operationId The operation ID from TimelockController
      */
-    function scheduleRemove(address target, bytes4 selector) 
-        external 
-        onlyOwner 
-        whenNotPaused
-        returns (bytes32 operationId) 
-    {
+    function _scheduleRemove(address target, bytes4 selector) internal returns (bytes32 operationId) {
         if (target == address(0)) revert InvalidTarget();
         if (selector == bytes4(0)) revert InvalidSelector();
         if (!whitelist[target][selector]) revert NotWhitelisted();
@@ -347,17 +483,14 @@ contract TargetRegistry is Ownable, Pausable {
         
         return operationId;
     }
-
-    /*//////////////////////////////////////////////////////////////
-                          EXECUTION FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
     
     /**
-     * @notice Execute a scheduled operation (anyone can call after timelock)
+     * @notice Internal function to execute a scheduled operation
+     * @dev Internal implementation for single operation execution
      * @param target The target address
      * @param selector The selector
      */
-    function executeOperation(address target, bytes4 selector) external {
+    function _executeOperation(address target, bytes4 selector) internal {
         // Determine operation type based on current whitelist status
         bool isAdd = !whitelist[target][selector];
         bytes memory data = isAdd 
@@ -365,7 +498,6 @@ contract TargetRegistry is Ownable, Pausable {
             : abi.encodeWithSelector(this._removeFromWhitelist.selector, target, selector);
         
         // Execute via TimelockController
-        // Note: TimelockController calculates the operationId internally
         timelock.execute(
             address(this),
             0,
@@ -376,21 +508,18 @@ contract TargetRegistry is Ownable, Pausable {
     }
     
     /**
-     * @notice Cancel a pending operation
+     * @notice Internal function to cancel a pending operation
+     * @dev Internal implementation for single operation cancellation
      * @param target The target address
      * @param selector The selector
      */
-    function cancelOperation(address target, bytes4 selector) external onlyOwner {
+    function _cancelOperation(address target, bytes4 selector) internal {
         bytes32 operationId = targetSelectorToOpId[target][selector];
         
         timelock.cancel(operationId);
         
         delete targetSelectorToOpId[target][selector];
     }
-
-    /*//////////////////////////////////////////////////////////////
-                          INTERNAL FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
     
     /**
      * @notice Internal function to add to whitelist (called by TimelockController)
@@ -489,4 +618,3 @@ contract TargetRegistry is Ownable, Pausable {
         return timelock.getTimestamp(operationId);
     }
 }
-

@@ -82,27 +82,33 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         // Schedule and execute whitelist operations (with OpenZeppelin timelock)
         vm.startPrank(registryOwner);
         
-        // Schedule adds for DeFi pools
-        registry.scheduleAdd(address(uniswapPool), SWAP_SELECTOR);
-        registry.scheduleAdd(address(aavePool), SWAP_SELECTOR);
-        registry.scheduleAdd(address(curvePool), SWAP_SELECTOR);
+        // Schedule adds for DeFi pools and ERC20 tokens (batch operation)
+        address[] memory scheduleTargets = new address[](5);
+        scheduleTargets[0] = address(uniswapPool);
+        scheduleTargets[1] = address(aavePool);
+        scheduleTargets[2] = address(curvePool);
+        scheduleTargets[3] = address(usdcToken);
+        scheduleTargets[4] = address(wethToken);
         
-        // Schedule adds for ERC20 tokens
-        registry.scheduleAdd(address(usdcToken), TRANSFER_SELECTOR);
-        registry.scheduleAdd(address(wethToken), TRANSFER_SELECTOR);
+        bytes4[] memory scheduleSelectors = new bytes4[](5);
+        scheduleSelectors[0] = SWAP_SELECTOR;
+        scheduleSelectors[1] = SWAP_SELECTOR;
+        scheduleSelectors[2] = SWAP_SELECTOR;
+        scheduleSelectors[3] = TRANSFER_SELECTOR;
+        scheduleSelectors[4] = TRANSFER_SELECTOR;
+        
+        registry.scheduleAdd(scheduleTargets, scheduleSelectors);
         
         // Add USDC as restricted token (immediate, no timelock needed)
-        registry.addRestrictedERC20Token(address(usdcToken));
+        address[] memory usdcTokenArray = new address[](1);
+        usdcTokenArray[0] = address(usdcToken);
+        registry.addAllowedERC20Token(usdcTokenArray);
         
         // Fast forward time by 1 day + 1 second
         vm.warp(block.timestamp + 1 days + 1);
         
         // Execute the operations (ANYONE can execute with OpenZeppelin!)
-        registry.executeOperation(address(uniswapPool), SWAP_SELECTOR);
-        registry.executeOperation(address(aavePool), SWAP_SELECTOR);
-        registry.executeOperation(address(curvePool), SWAP_SELECTOR);
-        registry.executeOperation(address(usdcToken), TRANSFER_SELECTOR);
-        registry.executeOperation(address(wethToken), TRANSFER_SELECTOR);
+        registry.executeOperation(scheduleTargets, scheduleSelectors);
         
         vm.stopPrank();
         
@@ -150,24 +156,32 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         vm.label(address(registry), "TestTargetRegistryWithMockSafe");
         
         // Add USDC as restricted token
-        registry.addRestrictedERC20Token(address(usdcToken));
+        address[] memory usdcArray2 = new address[](1);
+        usdcArray2[0] = address(usdcToken);
+        registry.addAllowedERC20Token(usdcArray2);
         
         // Schedule and execute whitelist operations
-        registry.scheduleAdd(address(uniswapPool), SWAP_SELECTOR);
-        registry.scheduleAdd(address(aavePool), SWAP_SELECTOR);
-        registry.scheduleAdd(address(curvePool), SWAP_SELECTOR);
-        registry.scheduleAdd(address(usdcToken), TRANSFER_SELECTOR);
-        registry.scheduleAdd(address(wethToken), TRANSFER_SELECTOR);
+        address[] memory scheduleTargets2 = new address[](5);
+        scheduleTargets2[0] = address(uniswapPool);
+        scheduleTargets2[1] = address(aavePool);
+        scheduleTargets2[2] = address(curvePool);
+        scheduleTargets2[3] = address(usdcToken);
+        scheduleTargets2[4] = address(wethToken);
+        
+        bytes4[] memory scheduleSelectors2 = new bytes4[](5);
+        scheduleSelectors2[0] = SWAP_SELECTOR;
+        scheduleSelectors2[1] = SWAP_SELECTOR;
+        scheduleSelectors2[2] = SWAP_SELECTOR;
+        scheduleSelectors2[3] = TRANSFER_SELECTOR;
+        scheduleSelectors2[4] = TRANSFER_SELECTOR;
+        
+        registry.scheduleAdd(scheduleTargets2, scheduleSelectors2);
         
         // Fast forward time by 1 day + 1 second
         vm.warp(block.timestamp + 1 days + 1);
         
         // Execute the operations
-        registry.executeOperation(address(uniswapPool), SWAP_SELECTOR);
-        registry.executeOperation(address(aavePool), SWAP_SELECTOR);
-        registry.executeOperation(address(curvePool), SWAP_SELECTOR);
-        registry.executeOperation(address(usdcToken), TRANSFER_SELECTOR);
-        registry.executeOperation(address(wethToken), TRANSFER_SELECTOR);
+        registry.executeOperation(scheduleTargets2, scheduleSelectors2);
         
         vm.stopPrank();
         
@@ -190,6 +204,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         // Prepare single call to Uniswap
         address[] memory targets = new address[](1);
         bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
         
         targets[0] = address(uniswapPool);
         calldatas[0] = abi.encodeWithSelector(
@@ -197,6 +212,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
             1000 ether,
             900 ether
         );
+        values[0] = 0; // No ETH value for regular swaps
         
         // Execute via smart account
         instance.exec({
@@ -205,7 +221,8 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
             callData: abi.encodeWithSelector(
                 GuardedExecModuleUpgradeable.executeGuardedBatch.selector,
                 targets,
-                calldatas
+                calldatas,
+                values
             )
         });
         
@@ -223,6 +240,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         // Prepare batch: Uniswap swap, Aave swap, Curve swap
         address[] memory targets = new address[](3);
         bytes[] memory calldatas = new bytes[](3);
+        uint256[] memory values = new uint256[](3);
         
         targets[0] = address(uniswapPool);
         targets[1] = address(aavePool);
@@ -232,6 +250,10 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         calldatas[1] = abi.encodeWithSelector(SWAP_SELECTOR, 2000 ether, 1800 ether);
         calldatas[2] = abi.encodeWithSelector(SWAP_SELECTOR, 3000 ether, 2700 ether);
         
+        values[0] = 0;
+        values[1] = 0;
+        values[2] = 0;
+        
         // Execute batch
         instance.exec({
             target: address(guardedModule),
@@ -239,7 +261,8 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
             callData: abi.encodeWithSelector(
                 GuardedExecModuleUpgradeable.executeGuardedBatch.selector,
                 targets,
-                calldatas
+                calldatas,
+                values
             )
         });
         
@@ -297,9 +320,11 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         // Now should work
         address[] memory targets = new address[](1);
         bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
         
         targets[0] = address(uniswapPool);
         calldatas[0] = abi.encodeWithSelector(SWAP_SELECTOR, 1000 ether, 900 ether);
+        values[0] = 0;
         
         instance.exec({
             target: address(guardedModule),
@@ -307,7 +332,8 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
             callData: abi.encodeWithSelector(
                 GuardedExecModuleUpgradeable.executeGuardedBatch.selector,
                 targets,
-                calldatas
+                calldatas,
+                values
             )
         });
     }
@@ -347,13 +373,19 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         vm.label(address(newRegistry), "NewRegistry");
         
         // Add the same whitelist entries
-        newRegistry.addRestrictedERC20Token(address(usdcToken));
-        newRegistry.scheduleAdd(address(uniswapPool), SWAP_SELECTOR);
-        newRegistry.scheduleAdd(address(usdcToken), TRANSFER_SELECTOR);
+        address[] memory usdcArray3 = new address[](1);
+        usdcArray3[0] = address(usdcToken);
+        newRegistry.addAllowedERC20Token(usdcArray3);
+        address[] memory scheduleTargets3 = new address[](2);
+        scheduleTargets3[0] = address(uniswapPool);
+        scheduleTargets3[1] = address(usdcToken);
+        bytes4[] memory scheduleSelectors3 = new bytes4[](2);
+        scheduleSelectors3[0] = SWAP_SELECTOR;
+        scheduleSelectors3[1] = TRANSFER_SELECTOR;
+        newRegistry.scheduleAdd(scheduleTargets3, scheduleSelectors3);
         
         vm.warp(block.timestamp + 1 days + 1);
-        newRegistry.executeOperation(address(uniswapPool), SWAP_SELECTOR);
-        newRegistry.executeOperation(address(usdcToken), TRANSFER_SELECTOR);
+        newRegistry.executeOperation(scheduleTargets3, scheduleSelectors3);
         vm.stopPrank();
         
         // Update registry
@@ -366,9 +398,11 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         // Verify it still works
         address[] memory targets = new address[](1);
         bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
         
         targets[0] = address(uniswapPool);
         calldatas[0] = abi.encodeWithSelector(SWAP_SELECTOR, 1000 ether, 900 ether);
+        values[0] = 0;
         
         instance.exec({
             target: address(guardedModule),
@@ -376,7 +410,8 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
             callData: abi.encodeWithSelector(
                 GuardedExecModuleUpgradeable.executeGuardedBatch.selector,
                 targets,
-                calldatas
+                calldatas,
+                values
             )
         });
     }
@@ -410,9 +445,11 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         // Test 1: Transfer to smart account itself (should work)
         address[] memory targets = new address[](1);
         bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
         
         targets[0] = address(usdcToken);
         calldatas[0] = abi.encodeWithSelector(TRANSFER_SELECTOR, smartAccount, 100 * 10**6);
+        values[0] = 0;
         
         instance.exec({
             target: address(guardedModule),
@@ -420,13 +457,15 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
             callData: abi.encodeWithSelector(
                 GuardedExecModuleUpgradeable.executeGuardedBatch.selector,
                 targets,
-                calldatas
+                calldatas,
+                values
             )
         });
         
         // Test 2: Transfer to Safe owner (should work)
         address[] memory owners = mockSafeWallet.getOwners();
         calldatas[0] = abi.encodeWithSelector(TRANSFER_SELECTOR, owners[1], 100 * 10**6);
+        values[0] = 0;
         
         instance.exec({
             target: address(guardedModule),
@@ -434,7 +473,8 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
             callData: abi.encodeWithSelector(
                 GuardedExecModuleUpgradeable.executeGuardedBatch.selector,
                 targets,
-                calldatas
+                calldatas,
+                values
             )
         });
         
@@ -443,6 +483,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         wethToken.mint(smartAccount, 1 ether);
         targets[0] = address(wethToken);
         calldatas[0] = abi.encodeWithSelector(TRANSFER_SELECTOR, randomAddress, 0.1 ether);
+        values[0] = 0;
         
         instance.exec({
             target: address(guardedModule),
@@ -450,7 +491,8 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
             callData: abi.encodeWithSelector(
                 GuardedExecModuleUpgradeable.executeGuardedBatch.selector,
                 targets,
-                calldatas
+                calldatas,
+                values
             )
         });
     }
@@ -611,5 +653,200 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
             "Storage compatibility test",
             "Upgrade message should be set"
         );
+    }
+    
+    /**
+     * @notice TEST 14: Unsupported pool should revert
+     * @dev Tests that calling an unsupported pool fails the whitelist check
+     */
+    function test_UnsupportedPoolShouldRevert() public {
+        // Deploy a new unsupported pool
+        MockDeFiPool unsupportedPool = new MockDeFiPool();
+        vm.label(address(unsupportedPool), "UnsupportedPool");
+        
+        // Try to call unsupported pool (not whitelisted) directly as smart account
+        address[] memory targets = new address[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
+        
+        targets[0] = address(unsupportedPool);
+        calldatas[0] = abi.encodeWithSelector(SWAP_SELECTOR, 1000 ether, 900 ether);
+        values[0] = 0;
+        
+        // Call directly as smart account (not via instance.exec wrapper)
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.TargetSelectorNotWhitelisted.selector,
+                address(unsupportedPool),
+                SWAP_SELECTOR
+            )
+        );
+        
+        guardedModule.executeGuardedBatch(targets, calldatas, values);
+    }
+    
+    /**
+     * @notice TEST 15: Anyone can execute after OpenZeppelin timelock
+     */
+    function test_PermissionlessExecution() public {
+        MockDeFiPool newPool = new MockDeFiPool();
+        
+        // Owner schedules
+        vm.prank(registryOwner);
+        address[] memory scheduleTargets4 = new address[](1);
+        scheduleTargets4[0] = address(newPool);
+        bytes4[] memory scheduleSelectors4 = new bytes4[](1);
+        scheduleSelectors4[0] = SWAP_SELECTOR;
+        registry.scheduleAdd(scheduleTargets4, scheduleSelectors4);
+        
+        // Fast forward
+        vm.warp(block.timestamp + 1 days + 1);
+        
+        // Random user executes (this is an OpenZeppelin feature!)
+        address randomUser = makeAddr("randomUser");
+        vm.prank(randomUser);
+        registry.executeOperation(scheduleTargets4, scheduleSelectors4);
+        
+        // Verify it's whitelisted
+        bool whitelisted = registry.isWhitelisted(address(newPool), SWAP_SELECTOR);
+        assertTrue(whitelisted);
+    }
+    
+    /**
+     * @notice TEST 16: Registry pause stops malicious scheduling
+     */
+    function test_RegistryPauseStopsMaliciousScheduling() public {
+        MockDeFiPool maliciousPool = new MockDeFiPool();
+        
+        vm.startPrank(registryOwner);
+        
+        // First verify scheduling works when not paused
+        address[] memory scheduleTargets5 = new address[](1);
+        scheduleTargets5[0] = address(maliciousPool);
+        bytes4[] memory scheduleSelectors5 = new bytes4[](1);
+        scheduleSelectors5[0] = SWAP_SELECTOR;
+        bytes32[] memory opIds = registry.scheduleAdd(scheduleTargets5, scheduleSelectors5);
+        
+        // Cancel it for cleanup
+        vm.warp(block.timestamp - 1); // Reset time
+        registry.cancelOperation(scheduleTargets5, scheduleSelectors5);
+        
+        // EMERGENCY: Owner wallet compromised! Pause the registry!
+        registry.pause();
+        
+        // Attacker (using compromised owner key) tries to schedule malicious pool
+        vm.expectRevert();
+        registry.scheduleAdd(scheduleTargets5, scheduleSelectors5);
+        
+        // Unpause after securing the owner wallet
+        registry.unpause();
+        
+        // Can schedule again
+        registry.scheduleAdd(scheduleTargets5, scheduleSelectors5);
+        
+        vm.stopPrank();
+    }
+    
+    /**
+     * @notice TEST 17: Registry ERC20 restriction management
+     */
+    function test_RegistryERC20RestrictionManagement() public {
+        vm.startPrank(registryOwner);
+        
+        // Test adding restricted token
+        assertFalse(registry.allowedERC20Tokens(address(wethToken)), "WETH not allowed initially");
+        address[] memory wethArray = new address[](1);
+        wethArray[0] = address(wethToken);
+        registry.addAllowedERC20Token(wethArray);
+        assertTrue(registry.allowedERC20Tokens(address(wethToken)), "WETH now allowed");
+        
+        // Test removing restricted token
+        registry.removeAllowedERC20Token(wethArray);
+        assertFalse(registry.allowedERC20Tokens(address(wethToken)), "WETH no longer allowed");
+        
+        // Test adding same token twice (should fail)
+        vm.expectRevert();
+        address[] memory usdcArray4 = new address[](1);
+        usdcArray4[0] = address(usdcToken);
+        registry.addAllowedERC20Token(usdcArray4); // Already allowed
+        
+        // Test removing non-restricted token (should fail)
+        vm.expectRevert();
+        registry.removeAllowedERC20Token(wethArray); // Not restricted
+        
+        vm.stopPrank();
+    }
+    
+    /**
+     * @notice TEST 18: ERC20 transfer restrictions with mock Safe wallet
+     */
+    function test_ERC20TransferRestrictionsWithMockSafe() public {
+        // Mint some USDC to smart account
+        usdcToken.mint(smartAccount, 1000 * 10**6); // 1000 USDC
+        
+        // Get Safe owners
+        address[] memory owners = mockSafeWallet.getOwners();
+        
+        // Test 1: Transfer to smart account itself (should work)
+        address[] memory targets = new address[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
+        
+        targets[0] = address(usdcToken);
+        calldatas[0] = abi.encodeWithSelector(TRANSFER_SELECTOR, smartAccount, 100 * 10**6);
+        values[0] = 0;
+        
+        instance.exec({
+            target: address(guardedModule),
+            value: 0,
+            callData: abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.executeGuardedBatch.selector,
+                targets,
+                calldatas,
+                values
+            )
+        });
+        
+        // Test 2: Transfer to Safe owner (should work)
+        calldatas[0] = abi.encodeWithSelector(TRANSFER_SELECTOR, owners[1], 100 * 10**6);
+        values[0] = 0;
+        
+        instance.exec({
+            target: address(guardedModule),
+            value: 0,
+            callData: abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.executeGuardedBatch.selector,
+                targets,
+                calldatas,
+                values
+            )
+        });
+        
+        // Test 3: Transfer to random address (should fail)
+        address randomAddress = makeAddr("randomAddress");
+        calldatas[0] = abi.encodeWithSelector(TRANSFER_SELECTOR, randomAddress, 100 * 10**6);
+        values[0] = 0;
+        
+        // Check if the transfer would be authorized (should be false)
+        bool isAuthorized = registry.isERC20TransferAuthorized(address(usdcToken), randomAddress, smartAccount);
+        assertFalse(isAuthorized, "Transfer to random address should not be authorized");
+        
+        // Test 4: Transfer WETH to random address (should work - not restricted)
+        wethToken.mint(smartAccount, 1 ether);
+        targets[0] = address(wethToken);
+        calldatas[0] = abi.encodeWithSelector(TRANSFER_SELECTOR, randomAddress, 0.1 ether);
+        values[0] = 0;
+        
+        instance.exec({
+            target: address(guardedModule),
+            value: 0,
+            callData: abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.executeGuardedBatch.selector,
+                targets,
+                calldatas,
+                values
+            )
+        });
     }
 }

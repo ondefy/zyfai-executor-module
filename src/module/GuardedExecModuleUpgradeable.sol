@@ -87,7 +87,7 @@ contract GuardedExecModuleUpgradeable is
     }
 
     /*//////////////////////////////////////////////////////////////
-                          MODULE METADATA
+                          EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
     
     /**
@@ -124,10 +124,6 @@ contract GuardedExecModuleUpgradeable is
         // Always initialized as configuration is immutable
         return true;
     }
-
-    /*//////////////////////////////////////////////////////////////
-                          PAUSE FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
     
     /**
      * @notice Pause the module (emergency stop)
@@ -144,21 +140,6 @@ contract GuardedExecModuleUpgradeable is
     function unpause() external onlyOwner {
         _unpause();
     }
-
-    /*//////////////////////////////////////////////////////////////
-                        UPGRADE FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-    
-    /**
-     * @notice Authorize an upgrade
-     * @dev Only owner can authorize upgrades
-     * @param newImplementation The address of the new implementation
-     */
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
-
-    /*//////////////////////////////////////////////////////////////
-                        LIFECYCLE FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
     
     /**
      * @notice Module installation hook (no-op)
@@ -175,10 +156,6 @@ contract GuardedExecModuleUpgradeable is
     function onUninstall(bytes calldata) external override {
         // No-op: No storage to clean up
     }
-
-    /*//////////////////////////////////////////////////////////////
-                        EXECUTION FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
     
     /**
      * @notice Execute a batch of whitelisted calls to DeFi protocols
@@ -188,6 +165,7 @@ contract GuardedExecModuleUpgradeable is
      * 
      * @param targets Array of target contract addresses
      * @param calldatas Array of encoded function calls
+     * @param values Array of native asset values (ETH) to send with each call
      * @custom:security-note This function can be called by anyone (e.g., session keys)
      *                        but only whitelisted target+selector combinations can be called
      *                        Can be emergency stopped by pause controller
@@ -195,12 +173,14 @@ contract GuardedExecModuleUpgradeable is
      */
     function executeGuardedBatch(
         address[] calldata targets,
-        bytes[] calldata calldatas
+        bytes[] calldata calldatas,
+        uint256[] calldata values
     ) external whenNotPaused {
         // Input validation
         uint256 length = targets.length; // Cache length for gas savings
         if (length == 0) revert EmptyBatch();
         if (length != calldatas.length) revert LengthMismatch();
+        if (length != values.length) revert LengthMismatch();
         
         // Build execution array (allocate once)
         Execution[] memory executions = new Execution[](length);
@@ -210,6 +190,7 @@ contract GuardedExecModuleUpgradeable is
         for (uint256 i = 0; i < length;) {
             bytes calldata currentCalldata = calldatas[i];
             address currentTarget = targets[i];
+            uint256 currentValue = values[i];
             
             // Extract selector from calldata (first 4 bytes)
             if (currentCalldata.length < MIN_SELECTOR_LENGTH) revert InvalidCalldata();
@@ -226,9 +207,10 @@ contract GuardedExecModuleUpgradeable is
             }
             
             // Build execution after all validations pass
+            // NOTE: value field supports native ETH transfers (e.g., for ETH vaults)
             executions[i] = Execution({
                 target: currentTarget,
-                value: 0,
+                value: currentValue,
                 callData: currentCalldata
             });
             
@@ -240,9 +222,26 @@ contract GuardedExecModuleUpgradeable is
         _execute(executions);
     }
 
+    /**
+     * @notice Update the registry address (for migration)
+     * @dev Only owner can update the registry
+     * @param newRegistry The new registry address
+     */
+    function updateRegistry(address newRegistry) external onlyOwner {
+        if (newRegistry == address(0)) revert InvalidRegistry();
+        registry = TargetRegistry(newRegistry);
+    }
+
     /*//////////////////////////////////////////////////////////////
-                        INTERNAL FUNCTIONS
+                          INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+    
+    /**
+     * @notice Authorize an upgrade
+     * @dev Only owner can authorize upgrades
+     * @param newImplementation The address of the new implementation
+     */
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
     
     /**
      * @notice Validate ERC20 transfer for restricted tokens
@@ -272,15 +271,5 @@ contract GuardedExecModuleUpgradeable is
      */
     function getRegistry() external view returns (address) {
         return address(registry);
-    }
-
-    /**
-     * @notice Update the registry address (for migration)
-     * @dev Only owner can update the registry
-     * @param newRegistry The new registry address
-     */
-    function updateRegistry(address newRegistry) external onlyOwner {
-        if (newRegistry == address(0)) revert InvalidRegistry();
-        registry = TargetRegistry(newRegistry);
     }
 }

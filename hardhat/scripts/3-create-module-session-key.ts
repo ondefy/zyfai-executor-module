@@ -205,7 +205,7 @@ async function main() {
     }
     
     // Get function selector for approve(address,uint256)
-    // Create selector for executeGuardedBatch(address[],bytes[])
+    // Create selector for executeGuardedBatch(address[],bytes[],uint256[])
     const executeGuardedBatchSelector = toFunctionSelector(
       getAbiItem({
         abi: [
@@ -214,7 +214,8 @@ async function main() {
             type: "function",
             inputs: [
               { name: "targets", type: "address[]" },
-              { name: "calldatas", type: "bytes[]" }
+              { name: "calldatas", type: "bytes[]" },
+              { name: "values", type: "uint256[]" }
             ],
             outputs: [],
             stateMutability: "nonpayable"
@@ -322,7 +323,8 @@ async function main() {
       {
         "inputs": [
           { "internalType": "address[]", "name": "targets", "type": "address[]" },
-          { "internalType": "bytes[]", "name": "calldatas", "type": "bytes[]" }
+          { "internalType": "bytes[]", "name": "calldatas", "type": "bytes[]" },
+          { "internalType": "uint256[]", "name": "values", "type": "uint256[]" }
         ],
         "name": "executeGuardedBatch",
         "outputs": [],
@@ -401,6 +403,8 @@ async function main() {
         [USDC_ADDRESS, AAVE_POOL_ADDRESS],
         // Calldatas must match targets above
         [approveData, supplyData],
+        // Values: both 0 for ERC20 operations
+        [BigInt(0), BigInt(0)],
       ]
     });
 

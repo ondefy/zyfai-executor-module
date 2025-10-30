@@ -15,7 +15,7 @@ contract TestTargetRegistryWithMockSafe is TargetRegistry {
         mockSafeWallet = MockSafeWallet(_mockSafeWallet);
     }
     
-    function _isAuthorizedRecipient(address to, address smartWallet) 
+    function _isAuthorizedRecipient(address to, address smartWallet, address token) 
         internal 
         view 
         override
@@ -34,8 +34,12 @@ contract TestTargetRegistryWithMockSafe is TargetRegistry {
                 }
             }
         } catch {
-            // If getOwners() fails, only allow transfer to smart wallet itself
-            return false;
+            // If getOwners() fails, continue to next check
+        }
+        
+        // Check if `to` is an explicitly authorized recipient for this token
+        if (allowedERC20TokenRecipients[token][to]) {
+            return true;
         }
         
         return false;

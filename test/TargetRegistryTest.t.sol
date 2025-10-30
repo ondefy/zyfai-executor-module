@@ -27,7 +27,11 @@ contract TargetRegistryTest is Test {
         vm.startPrank(owner);
         
         // Schedule add
-        bytes32 opId = registry.scheduleAdd(mockTarget, SWAP_SELECTOR);
+        address[] memory targets = new address[](1);
+        targets[0] = mockTarget;
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = SWAP_SELECTOR;
+        bytes32[] memory opIds = registry.scheduleAdd(targets, selectors);
         
         // Check it's pending
         bool isPending = registry.isOperationPending(mockTarget, SWAP_SELECTOR);
@@ -48,7 +52,7 @@ contract TargetRegistryTest is Test {
         
         // Execute (anyone can execute!)
         vm.prank(user);
-        registry.executeOperation(mockTarget, SWAP_SELECTOR);
+        registry.executeOperation(targets, selectors);
         
         // Verify it's whitelisted
         bool whitelisted = registry.isWhitelisted(mockTarget, SWAP_SELECTOR);
@@ -56,22 +60,32 @@ contract TargetRegistryTest is Test {
     }
     
     function test_CannotExecuteBeforeTimelock() public {
+        address[] memory targets = new address[](1);
+        targets[0] = mockTarget;
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = SWAP_SELECTOR;
+        
         vm.prank(owner);
-        registry.scheduleAdd(mockTarget, SWAP_SELECTOR);
+        registry.scheduleAdd(targets, selectors);
         
         // Try to execute immediately (should fail)
         vm.expectRevert();
-        registry.executeOperation(mockTarget, SWAP_SELECTOR);
+        registry.executeOperation(targets, selectors);
         
         // Try after 23 hours (should still fail)
         vm.warp(block.timestamp + 23 hours);
         vm.expectRevert();
-        registry.executeOperation(mockTarget, SWAP_SELECTOR);
+        registry.executeOperation(targets, selectors);
     }
     
     function test_AnyoneCanExecuteAfterTimelock() public {
+        address[] memory targets = new address[](1);
+        targets[0] = mockTarget;
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = SWAP_SELECTOR;
+        
         vm.prank(owner);
-        registry.scheduleAdd(mockTarget, SWAP_SELECTOR);
+        registry.scheduleAdd(targets, selectors);
         
         // Fast forward
         vm.warp(block.timestamp + 1 days + 1);
@@ -79,19 +93,24 @@ contract TargetRegistryTest is Test {
         // Random user can execute
         address randomUser = makeAddr("randomUser");
         vm.prank(randomUser);
-        registry.executeOperation(mockTarget, SWAP_SELECTOR);
+        registry.executeOperation(targets, selectors);
         
         bool whitelisted = registry.isWhitelisted(mockTarget, SWAP_SELECTOR);
         assertTrue(whitelisted);
     }
     
     function test_CancelOperation() public {
+        address[] memory targets = new address[](1);
+        targets[0] = mockTarget;
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = SWAP_SELECTOR;
+        
         vm.startPrank(owner);
         
-        registry.scheduleAdd(mockTarget, SWAP_SELECTOR);
+        registry.scheduleAdd(targets, selectors);
         
         // Cancel it
-        registry.cancelOperation(mockTarget, SWAP_SELECTOR);
+        registry.cancelOperation(targets, selectors);
         
         vm.stopPrank();
         
@@ -100,17 +119,22 @@ contract TargetRegistryTest is Test {
         
         // Try to execute (should fail - operation was cancelled)
         vm.expectRevert();
-        registry.executeOperation(mockTarget, SWAP_SELECTOR);
+        registry.executeOperation(targets, selectors);
     }
     
     function test_GetOperationId() public {
+        address[] memory targets = new address[](1);
+        targets[0] = mockTarget;
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = SWAP_SELECTOR;
+        
         vm.prank(owner);
-        bytes32 scheduledOpId = registry.scheduleAdd(mockTarget, SWAP_SELECTOR);
+        bytes32[] memory scheduledOpIds = registry.scheduleAdd(targets, selectors);
         
         // Retrieve using helper
         bytes32 retrievedOpId = registry.getOperationId(mockTarget, SWAP_SELECTOR);
         
-        assertEq(scheduledOpId, retrievedOpId, "Operation IDs should match");
+        assertEq(scheduledOpIds[0], retrievedOpId, "Operation IDs should match");
     }
     
     /**
@@ -123,14 +147,18 @@ contract TargetRegistryTest is Test {
         registry.pause();
         
         // Try to schedule while paused (should fail)
+        address[] memory targets = new address[](1);
+        targets[0] = mockTarget;
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = SWAP_SELECTOR;
         vm.expectRevert();
-        registry.scheduleAdd(mockTarget, SWAP_SELECTOR);
+        registry.scheduleAdd(targets, selectors);
         
         // Unpause
         registry.unpause();
         
         // Should work now
-        registry.scheduleAdd(mockTarget, SWAP_SELECTOR);
+        registry.scheduleAdd(targets, selectors);
         
         vm.stopPrank();
     }
@@ -168,21 +196,25 @@ contract TargetRegistryTest is Test {
         vm.startPrank(owner);
         
         // Test adding restricted token
-        assertFalse(registry.restrictedERC20Tokens(usdcToken), "USDC not restricted initially");
-        registry.addRestrictedERC20Token(usdcToken);
-        assertTrue(registry.restrictedERC20Tokens(usdcToken), "USDC now restricted");
+        assertFalse(registry.allowedERC20Tokens(usdcToken), "USDC not allowed initially");
+        address[] memory tokens = new address[](1);
+        tokens[0] = usdcToken;
+        registry.addAllowedERC20Token(tokens);
+        assertTrue(registry.allowedERC20Tokens(usdcToken), "USDC now allowed");
         
         // Test adding same token twice (should fail)
         vm.expectRevert();
-        registry.addRestrictedERC20Token(usdcToken);
+        registry.addAllowedERC20Token(tokens);
         
         // Test removing restricted token
-        registry.removeRestrictedERC20Token(usdcToken);
-        assertFalse(registry.restrictedERC20Tokens(usdcToken), "USDC no longer restricted");
+        registry.removeAllowedERC20Token(tokens);
+        assertFalse(registry.allowedERC20Tokens(usdcToken), "USDC no longer allowed");
         
         // Test removing non-restricted token (should fail)
+        address[] memory wethArray = new address[](1);
+        wethArray[0] = wethToken;
         vm.expectRevert();
-        registry.removeRestrictedERC20Token(wethToken);
+        registry.removeAllowedERC20Token(wethArray);
         
         vm.stopPrank();
     }
@@ -210,7 +242,9 @@ contract TargetRegistryTest is Test {
         vm.startPrank(owner);
         
         // Add USDC as restricted token
-        testRegistry.addRestrictedERC20Token(usdcToken);
+        address[] memory usdcArray1 = new address[](1);
+        usdcArray1[0] = usdcToken;
+        testRegistry.addAllowedERC20Token(usdcArray1);
         
         vm.stopPrank();
         
@@ -237,5 +271,98 @@ contract TargetRegistryTest is Test {
         
         // Now transfer to owner2 should work
         assertTrue(testRegistry.isERC20TransferAuthorized(usdcToken, owner2, smartWallet), "Transfer to new Safe owner allowed");
+    }
+    
+    /**
+     * @notice Test transfers to allowed recipients
+     */
+    function test_ERC20TransferToAllowedRecipient() public {
+        address usdcToken = makeAddr("usdcToken");
+        address feeVault = makeAddr("feeVault");
+        address smartWallet = makeAddr("smartWallet");
+        
+        // Deploy mock Safe wallet
+        address[] memory safeOwners = new address[](1);
+        safeOwners[0] = smartWallet;
+        
+        MockSafeWallet mockSafe = new MockSafeWallet(safeOwners);
+        
+        // Deploy test registry with mock Safe
+        TestTargetRegistryWithMockSafe testRegistry = new TestTargetRegistryWithMockSafe(owner, address(mockSafe));
+        
+        vm.startPrank(owner);
+        
+        // Add USDC as restricted token
+        address[] memory usdcArray2 = new address[](1);
+        usdcArray2[0] = usdcToken;
+        testRegistry.addAllowedERC20Token(usdcArray2);
+        
+        // Add fee vault as allowed recipient
+        address[] memory feeVaultArray1 = new address[](1);
+        feeVaultArray1[0] = feeVault;
+        testRegistry.addAllowedERC20TokenRecipient(usdcToken, feeVaultArray1);
+        
+        // Verify transfer to fee vault is authorized
+        assertTrue(testRegistry.isERC20TransferAuthorized(usdcToken, feeVault, smartWallet), "Transfer to fee vault should be authorized");
+        
+        // Verify transfer to random address is NOT authorized
+        address randomAddress = makeAddr("randomAddress");
+        assertFalse(testRegistry.isERC20TransferAuthorized(usdcToken, randomAddress, smartWallet), "Transfer to random address should not be authorized");
+        
+        // Remove fee vault from allowed recipients
+        testRegistry.removeAllowedERC20TokenRecipient(usdcToken, feeVaultArray1);
+        
+        // Verify transfer to fee vault is now NOT authorized
+        assertFalse(testRegistry.isERC20TransferAuthorized(usdcToken, feeVault, smartWallet), "Transfer to fee vault should not be authorized after removal");
+        
+        vm.stopPrank();
+    }
+    
+    /**
+     * @notice Test adding and removing allowed ERC20 token recipients
+     */
+    function test_AllowedERC20TokenRecipientManagement() public {
+        address usdcToken = makeAddr("usdcToken");
+        address feeVault = makeAddr("feeVault");
+        address morphoAdapter = makeAddr("morphoAdapter");
+        
+        vm.startPrank(owner);
+        
+        // Add USDC as allowed token
+        address[] memory usdcArray = new address[](1);
+        usdcArray[0] = usdcToken;
+        registry.addAllowedERC20Token(usdcArray);
+        
+        // Test adding fee vault as allowed recipient
+        assertFalse(registry.allowedERC20TokenRecipients(usdcToken, feeVault), "Fee vault not allowed initially");
+        address[] memory feeVaultArray = new address[](1);
+        feeVaultArray[0] = feeVault;
+        registry.addAllowedERC20TokenRecipient(usdcToken, feeVaultArray);
+        assertTrue(registry.allowedERC20TokenRecipients(usdcToken, feeVault), "Fee vault now allowed");
+        
+        // Test adding morpho adapter as allowed recipient
+        address[] memory morphoArray = new address[](1);
+        morphoArray[0] = morphoAdapter;
+        registry.addAllowedERC20TokenRecipient(usdcToken, morphoArray);
+        assertTrue(registry.allowedERC20TokenRecipients(usdcToken, morphoAdapter), "Morpho adapter now allowed");
+        
+        // Test removing fee vault
+        registry.removeAllowedERC20TokenRecipient(usdcToken, feeVaultArray);
+        assertFalse(registry.allowedERC20TokenRecipients(usdcToken, feeVault), "Fee vault no longer allowed");
+        
+        // Test adding same recipient twice (should fail)
+        vm.expectRevert();
+        registry.addAllowedERC20TokenRecipient(usdcToken, morphoArray); // Already allowed
+        
+        // Test removing non-allowed recipient (should fail)
+        vm.expectRevert();
+        registry.removeAllowedERC20TokenRecipient(usdcToken, feeVaultArray); // Not allowed
+        
+        // Test adding recipient for token not in allowedERC20Tokens (should fail)
+        registry.removeAllowedERC20Token(usdcArray);
+        vm.expectRevert();
+        registry.addAllowedERC20TokenRecipient(usdcToken, feeVaultArray); // USDC not in allowedERC20Tokens
+        
+        vm.stopPrank();
     }
 }
