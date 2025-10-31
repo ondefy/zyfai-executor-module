@@ -498,7 +498,95 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 9: Direct ERC20 transfer authorization test with mock Safe
+     * @notice TEST 9: WETH restricted/unrestricted state management
+     */
+    function test_WETHRestrictionStateManagement() public {
+        address randomAddress = makeAddr("randomAddress");
+        
+        // Mint WETH to smart account
+        wethToken.mint(smartAccount, 1 ether);
+        
+        address[] memory targets = new address[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
+        
+        // First verify WETH is NOT restricted - should allow all transfers
+        assertFalse(registry.restrictedERC20Tokens(address(wethToken)), "WETH should NOT be restricted initially");
+        
+        // Test 1: Transfer WETH to random address should work (not restricted)
+        targets[0] = address(wethToken);
+        calldatas[0] = abi.encodeWithSelector(TRANSFER_SELECTOR, randomAddress, 0.1 ether);
+        values[0] = 0;
+        
+        instance.exec({
+            target: address(guardedModule),
+            value: 0,
+            callData: abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.executeGuardedBatch.selector,
+                targets,
+                calldatas,
+                values
+            )
+        });
+
+        // Now add WETH to restricted list
+        vm.startPrank(registryOwner);
+        address[] memory wethArray = new address[](1);
+        wethArray[0] = address(wethToken);
+        registry.addRestrictedERC20Token(wethArray);
+        vm.stopPrank();
+        
+        // Verify WETH is now restricted
+        assertTrue(registry.restrictedERC20Tokens(address(wethToken)), "WETH should NOW be restricted");
+        
+        // Test 2: Transfer WETH to random address should FAIL (now restricted)
+        wethToken.mint(smartAccount, 1 ether); // Mint more WETH
+        targets[0] = address(wethToken);
+        calldatas[0] = abi.encodeWithSelector(TRANSFER_SELECTOR, randomAddress, 0.1 ether);
+        values[0] = 0;
+        
+        instance.expect4337Revert(
+            GuardedExecModuleUpgradeable.UnauthorizedERC20Transfer.selector
+        );
+        instance.exec({
+            target: address(guardedModule),
+            value: 0,
+            callData: abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.executeGuardedBatch.selector,
+                targets,
+                calldatas,
+                values
+            )
+        });
+        
+        // Now remove WETH from restricted list
+        vm.startPrank(registryOwner);
+        registry.removeRestrictedERC20Token(wethArray);
+        vm.stopPrank();
+        
+        // Verify WETH is NO LONGER restricted
+        assertFalse(registry.restrictedERC20Tokens(address(wethToken)), "WETH should be UNRESTRICTED again");
+        
+        // Test 3: Transfer WETH to random address should work again (unrestricted)
+        wethToken.mint(smartAccount, 1 ether); // Mint more WETH
+        targets[0] = address(wethToken);
+        calldatas[0] = abi.encodeWithSelector(TRANSFER_SELECTOR, randomAddress, 0.1 ether);
+        values[0] = 0;
+        
+        instance.exec({
+            target: address(guardedModule),
+            value: 0,
+            callData: abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.executeGuardedBatch.selector,
+                targets,
+                calldatas,
+                values
+            )
+        });
+    }
+    
+    /**
+     * @notice TEST 10: Direct ERC20 transfer authorization test with mock Safe
      */
     function test_DirectERC20TransferAuthorizationWithMockSafe() public {
         // Test the registry's isERC20TransferAuthorized function directly
@@ -523,7 +611,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 10: Module initializes only once
+     * @notice TEST 11: Module initializes only once
      */
     function test_ModuleInitializesOnlyOnce() public {
         // Try to initialize again (should fail)
@@ -532,7 +620,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 11: Cannot update registry to zero address
+     * @notice TEST 12: Cannot update registry to zero address
      */
     function test_CannotUpdateRegistryToZeroAddress() public {
         vm.prank(moduleOwner);
@@ -541,7 +629,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 12: Upgrade module implementation while keeping same address
+     * @notice TEST 13: Upgrade module implementation while keeping same address
      */
     function test_UpgradeModuleKeepsSameAddress() public {
         address proxyAddr = address(proxy);
@@ -586,7 +674,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 13: Only owner can upgrade
+     * @notice TEST 14: Only owner can upgrade
      */
     function test_OnlyOwnerCanUpgrade() public {
         address attacker = makeAddr("attacker");
@@ -613,7 +701,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 14: Storage layout compatibility after upgrade
+     * @notice TEST 15: Storage layout compatibility after upgrade
      */
     function test_StorageLayoutCompatibility() public {
         // Store some data before upgrade
@@ -656,7 +744,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 14: Unsupported pool should revert
+     * @notice TEST 16: Unsupported pool should revert
      * @dev Tests that calling an unsupported pool fails the whitelist check
      */
     function test_UnsupportedPoolShouldRevert() public {
@@ -687,7 +775,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 15: Anyone can execute after OpenZeppelin timelock
+     * @notice TEST 17: Anyone can execute after OpenZeppelin timelock
      */
     function test_PermissionlessExecution() public {
         MockDeFiPool newPool = new MockDeFiPool();
@@ -714,7 +802,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 16: Registry pause stops malicious scheduling
+     * @notice TEST 18: Registry pause stops malicious scheduling
      */
     function test_RegistryPauseStopsMaliciousScheduling() public {
         MockDeFiPool maliciousPool = new MockDeFiPool();
@@ -749,7 +837,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 17: Registry ERC20 restriction management
+     * @notice TEST 19: Registry ERC20 restriction management
      */
     function test_RegistryERC20RestrictionManagement() public {
         vm.startPrank(registryOwner);
@@ -779,7 +867,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 18: ERC20 transfer restrictions with mock Safe wallet
+     * @notice TEST 20: ERC20 transfer restrictions with mock Safe wallet
      */
     function test_ERC20TransferRestrictionsWithMockSafe() public {
         // Mint some USDC to smart account
