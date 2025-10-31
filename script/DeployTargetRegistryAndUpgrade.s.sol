@@ -60,9 +60,9 @@ contract DeployTargetRegistryAndUpgrade is Script {
         
         // Verify everything
         console.log("\n=== Verification ===");
-        assert(proxy.getRegistry() == address(registry));
+        assert(address(proxy.registry()) == address(registry));
         assert(registry.owner() == deployer);
-        console.log("Registry verified:", proxy.getRegistry());
+        console.log("Registry verified:", address(proxy.registry()));
         console.log("Proxy owner:", proxy.owner());
         
         console.log("\n=== Deployment Summary ===");

@@ -45,6 +45,9 @@ contract GuardedExecModuleUpgradeable is
     /// @notice Registry for target + selector whitelist verification
     /// @dev Can be changed via upgrade in case of registry migration
     TargetRegistry public registry;
+    
+    /// @notice Storage gap for future variables in upgrades
+    uint256[50] private __gapGuardedExecModule;
 
     /*//////////////////////////////////////////////////////////////
                                EVENTS
@@ -190,6 +193,9 @@ contract GuardedExecModuleUpgradeable is
         // Build execution array (allocate once)
         Execution[] memory executions = new Execution[](length);
         
+        // Cache registry for gas optimization
+        TargetRegistry reg = registry;
+        
         // Single-pass validation and execution array building
         // SECURITY: All validations happen before any execution
         for (uint256 i = 0; i < length;) {
@@ -202,13 +208,13 @@ contract GuardedExecModuleUpgradeable is
             bytes4 selector = bytes4(currentCalldata[:4]);
             
             // SECURITY CHECK 1: Whitelist verification
-            if (!registry.isWhitelisted(currentTarget, selector)) {
+            if (!reg.isWhitelisted(currentTarget, selector)) {
                 revert TargetSelectorNotWhitelisted(currentTarget, selector);
             }
             
-            // SECURITY CHECK 2: ERC20 transfer restriction check
+            // SECURITY CHECK 2: ERC20 transfer authorization check
             if (selector == TRANSFER_SELECTOR) {
-                _validateERC20Transfer(currentTarget, currentCalldata);
+                _validateERC20Transfer(currentTarget, currentCalldata, reg);
             }
             
             // Build execution after all validations pass
@@ -253,32 +259,23 @@ contract GuardedExecModuleUpgradeable is
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
     
     /**
-     * @notice Validate ERC20 transfer for restricted tokens
+     * @notice Validate ERC20 transfer for allowed tokens
      * @dev Checks if transfer recipient is authorized (smart wallet or owner)
      * @param token The ERC20 token address
      * @param callData The encoded transfer call data
+     * @param reg The cached registry instance (for gas optimization)
      */
-    function _validateERC20Transfer(address token, bytes calldata callData) internal view {
+    function _validateERC20Transfer(address token, bytes calldata callData, TargetRegistry reg) internal view {
         // Decode transfer(address to, uint256 amount) parameters
-        if (callData.length < MIN_TRANSFER_LENGTH) revert InvalidCalldata();
+        // Standard ERC20 transfer is exactly 68 bytes: 4 (selector) + 32 (to) + 32 (amount)
+        if (callData.length != MIN_TRANSFER_LENGTH) revert InvalidCalldata();
         
         address to = abi.decode(callData[4:36], (address));
 
-        // Check if this transfer is authorized for restricted tokens
-        if (!registry.isERC20TransferAuthorized(token, to, msg.sender)) {
+        // Check if this transfer is authorized for allowed tokens
+        if (!reg.isERC20TransferAuthorized(token, to, msg.sender)) {
             revert UnauthorizedERC20Transfer(token, to);
         }
     }
 
-    /*//////////////////////////////////////////////////////////////
-                          VIEW FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-    
-    /**
-     * @notice Get the configured registry address
-     * @return Address of the target registry contract
-     */
-    function getRegistry() external view returns (address) {
-        return address(registry);
-    }
 }

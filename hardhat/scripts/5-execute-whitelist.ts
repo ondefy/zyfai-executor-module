@@ -70,7 +70,7 @@ async function main() {
   // TargetRegistry ABI (updated for batch operations)
   const registryAbi = parseAbi([
     // Batch operations
-    "function executeOperation(address[] memory targets, bytes4[] memory selectors) external",
+    "function executeOperation(address[] calldata targets, bytes4[] calldata selectors) external",
     "function isWhitelisted(address target, bytes4 selector) external view returns (bool)",
     "function isOperationReady(address target, bytes4 selector) external view returns (bool)",
     "function isOperationPending(address target, bytes4 selector) external view returns (bool)",

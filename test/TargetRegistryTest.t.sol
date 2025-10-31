@@ -196,25 +196,25 @@ contract TargetRegistryTest is Test {
         vm.startPrank(owner);
         
         // Test adding restricted token
-        assertFalse(registry.allowedERC20Tokens(usdcToken), "USDC not allowed initially");
+        assertFalse(registry.restrictedERC20Tokens(usdcToken), "USDC not restricted initially");
         address[] memory tokens = new address[](1);
         tokens[0] = usdcToken;
-        registry.addAllowedERC20Token(tokens);
-        assertTrue(registry.allowedERC20Tokens(usdcToken), "USDC now allowed");
+        registry.addRestrictedERC20Token(tokens);
+        assertTrue(registry.restrictedERC20Tokens(usdcToken), "USDC now restricted");
         
         // Test adding same token twice (should fail)
         vm.expectRevert();
-        registry.addAllowedERC20Token(tokens);
+        registry.addRestrictedERC20Token(tokens);
         
         // Test removing restricted token
-        registry.removeAllowedERC20Token(tokens);
-        assertFalse(registry.allowedERC20Tokens(usdcToken), "USDC no longer allowed");
+        registry.removeRestrictedERC20Token(tokens);
+        assertFalse(registry.restrictedERC20Tokens(usdcToken), "USDC no longer restricted");
         
         // Test removing non-restricted token (should fail)
         address[] memory wethArray = new address[](1);
         wethArray[0] = wethToken;
         vm.expectRevert();
-        registry.removeAllowedERC20Token(wethArray);
+        registry.removeRestrictedERC20Token(wethArray);
         
         vm.stopPrank();
     }
@@ -244,7 +244,7 @@ contract TargetRegistryTest is Test {
         // Add USDC as restricted token
         address[] memory usdcArray1 = new address[](1);
         usdcArray1[0] = usdcToken;
-        testRegistry.addAllowedERC20Token(usdcArray1);
+        testRegistry.addRestrictedERC20Token(usdcArray1);
         
         vm.stopPrank();
         
@@ -295,7 +295,7 @@ contract TargetRegistryTest is Test {
         // Add USDC as restricted token
         address[] memory usdcArray2 = new address[](1);
         usdcArray2[0] = usdcToken;
-        testRegistry.addAllowedERC20Token(usdcArray2);
+        testRegistry.addRestrictedERC20Token(usdcArray2);
         
         // Add fee vault as allowed recipient
         address[] memory feeVaultArray1 = new address[](1);
@@ -328,10 +328,10 @@ contract TargetRegistryTest is Test {
         
         vm.startPrank(owner);
         
-        // Add USDC as allowed token
+        // Add USDC as restricted token
         address[] memory usdcArray = new address[](1);
         usdcArray[0] = usdcToken;
-        registry.addAllowedERC20Token(usdcArray);
+        registry.addRestrictedERC20Token(usdcArray);
         
         // Test adding fee vault as allowed recipient
         assertFalse(registry.allowedERC20TokenRecipients(usdcToken, feeVault), "Fee vault not allowed initially");
@@ -358,11 +358,65 @@ contract TargetRegistryTest is Test {
         vm.expectRevert();
         registry.removeAllowedERC20TokenRecipient(usdcToken, feeVaultArray); // Not allowed
         
-        // Test adding recipient for token not in allowedERC20Tokens (should fail)
-        registry.removeAllowedERC20Token(usdcArray);
+        // Test adding recipient for token not in restrictedERC20Tokens (should fail)
+        registry.removeRestrictedERC20Token(usdcArray);
         vm.expectRevert();
-        registry.addAllowedERC20TokenRecipient(usdcToken, feeVaultArray); // USDC not in allowedERC20Tokens
+        registry.addAllowedERC20TokenRecipient(usdcToken, feeVaultArray); // USDC not in restrictedERC20Tokens
         
         vm.stopPrank();
+    }
+    
+    /**
+     * @notice TEST: Can re-schedule after execution (bug fix verification)
+     * @dev Verifies that the fixed salt allows re-scheduling the same pair
+     */
+    function test_CanRescheduleAfterExecution() public {
+        address[] memory targets = new address[](1);
+        targets[0] = mockTarget;
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = SWAP_SELECTOR;
+        
+        // ✅ CRITICAL TEST: Can add → execute → remove → execute → add again
+        // This would have FAILED with the old fixed salt implementation
+        
+        // Step 1: Add
+        vm.prank(owner);
+        registry.scheduleAdd(targets, selectors);
+        vm.warp(block.timestamp + 1 days + 1);
+        registry.executeOperation(targets, selectors);
+        assertTrue(registry.isWhitelisted(mockTarget, SWAP_SELECTOR), "Should be whitelisted after add");
+        
+        // Step 2: Remove
+        vm.prank(owner);
+        registry.scheduleRemove(targets, selectors);
+        vm.warp(block.timestamp + 1 days + 1);
+        registry.executeOperation(targets, selectors);
+        assertFalse(registry.isWhitelisted(mockTarget, SWAP_SELECTOR), "Should not be whitelisted after remove");
+        
+        // Step 3: Add again (this would have FAILED before the fix!)
+        vm.prank(owner);
+        registry.scheduleAdd(targets, selectors); // ✅ Should work now with unique salt!
+        vm.warp(block.timestamp + 1 days + 1);
+        registry.executeOperation(targets, selectors);
+        assertTrue(registry.isWhitelisted(mockTarget, SWAP_SELECTOR), "Should be whitelisted after second add");
+    }
+    
+    /**
+     * @notice TEST: Cannot schedule duplicate operation before execution
+     */
+    function test_CannotScheduleDuplicateOperation() public {
+        address[] memory targets = new address[](1);
+        targets[0] = mockTarget;
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = SWAP_SELECTOR;
+        
+        // Schedule first operation
+        vm.prank(owner);
+        registry.scheduleAdd(targets, selectors);
+        
+        // Try to schedule again before executing the first (should fail)
+        vm.prank(owner);
+        vm.expectRevert(TargetRegistry.PendingOperationExists.selector);
+        registry.scheduleAdd(targets, selectors);
     }
 }

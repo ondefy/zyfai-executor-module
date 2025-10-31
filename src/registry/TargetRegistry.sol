@@ -4,7 +4,6 @@ pragma solidity ^0.8.23;
 import "@openzeppelin/contracts/governance/TimelockController.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ISafeWallet } from "../interfaces/ISafeWallet.sol";
 
 /**
@@ -25,13 +24,20 @@ contract TargetRegistry is Ownable, Pausable {
     /// @notice Whitelist: target address => selector => is whitelisted
     mapping(address => mapping(bytes4 => bool)) public whitelist;
     
-    /// @notice Reverse lookup: target => selector => operation ID
-    mapping(address => mapping(bytes4 => bytes32)) public targetSelectorToOpId;
+    /// @notice Operation metadata for each target+selector
+    /// @dev Stores operation ID, action type, and unique salt for re-scheduling
+    struct OpMeta {
+        bytes32 operationId;
+        bool isAdd;
+        bytes32 salt;
+    }
+    mapping(address => mapping(bytes4 => OpMeta)) public opMeta;
     
-    /// @notice ERC20 tokens with transfer restrictions (e.g., USDC)
-    mapping(address => bool) public allowedERC20Tokens;
+    /// @notice ERC20 tokens with restricted transfers (e.g., USDC)
+    /// @dev When true, transfers to arbitrary addresses are blocked; only authorized recipients allowed
+    mapping(address => bool) public restrictedERC20Tokens;
     
-    /// @notice Allowed recipients for specific ERC20 tokens
+    /// @notice Authorized recipients for specific ERC20 tokens
     /// @dev For restricted tokens, this maps: token => recipient => is allowed
     mapping(address => mapping(address => bool)) public allowedERC20TokenRecipients;
 
@@ -56,7 +62,7 @@ contract TargetRegistry is Ownable, Pausable {
         bytes4 indexed selector
     );
     
-    event ERC20TokenRestrictionAdded(
+    event RestrictedERC20TokenChanged(
         address indexed token,
         bool restricted
     );
@@ -75,6 +81,7 @@ contract TargetRegistry is Ownable, Pausable {
     error InvalidSelector();
     error AlreadyWhitelisted();
     error NotWhitelisted();
+    error PendingOperationExists();
     error UnauthorizedERC20Transfer(address token, address to);
     error InvalidERC20Token();
     error InvalidRecipient();
@@ -126,38 +133,38 @@ contract TargetRegistry is Ownable, Pausable {
     }
     
     /**
-     * @notice Add ERC20 token(s) to allowed list (batch operation)
-     * @dev Only owner can add allowed tokens. Pass array of 1 for single token.
+     * @notice Add ERC20 token(s) to restricted list (batch operation)
+     * @dev Only owner can add restricted tokens. These tokens will have transfer monitoring enabled. Pass array of 1 for single token.
      * @param tokens Array of ERC20 token addresses
      */
-    function addAllowedERC20Token(address[] memory tokens) external onlyOwner {
+    function addRestrictedERC20Token(address[] calldata tokens) external onlyOwner {
         uint256 length = tokens.length;
         for (uint256 i = 0; i < length;) {
-            _addAllowedERC20Token(tokens[i]);
+            _addRestrictedERC20Token(tokens[i]);
             unchecked { ++i; }
         }
     }
     
     /**
-     * @notice Remove ERC20 token(s) from allowed list (batch operation)
-     * @dev Only owner can remove allowed tokens. Pass array of 1 for single token.
+     * @notice Remove ERC20 token(s) from restricted list (batch operation)
+     * @dev Only owner can remove restricted tokens. Transfers will no longer be monitored. Pass array of 1 for single token.
      * @param tokens Array of ERC20 token addresses
      */
-    function removeAllowedERC20Token(address[] memory tokens) external onlyOwner {
+    function removeRestrictedERC20Token(address[] calldata tokens) external onlyOwner {
         uint256 length = tokens.length;
         for (uint256 i = 0; i < length;) {
-            _removeAllowedERC20Token(tokens[i]);
+            _removeRestrictedERC20Token(tokens[i]);
             unchecked { ++i; }
         }
     }
     
     /**
      * @notice Add authorized recipient(s) for a specific ERC20 token (batch operation)
-     * @dev Only owner can add authorized recipients. Token must be in allowedERC20Tokens. Pass array of 1 for single recipient.
+     * @dev Only owner can add authorized recipients. Token must be in restrictedERC20Tokens. Pass array of 1 for single recipient.
      * @param token The ERC20 token address
      * @param recipients Array of recipient addresses that will be authorized to receive the token
      */
-    function addAllowedERC20TokenRecipient(address token, address[] memory recipients) external onlyOwner {
+    function addAllowedERC20TokenRecipient(address token, address[] calldata recipients) external onlyOwner {
         uint256 length = recipients.length;
         for (uint256 i = 0; i < length;) {
             _addAllowedERC20TokenRecipient(token, recipients[i]);
@@ -171,7 +178,7 @@ contract TargetRegistry is Ownable, Pausable {
      * @param token The ERC20 token address
      * @param recipients Array of recipient addresses to remove from authorized list
      */
-    function removeAllowedERC20TokenRecipient(address token, address[] memory recipients) external onlyOwner {
+    function removeAllowedERC20TokenRecipient(address token, address[] calldata recipients) external onlyOwner {
         uint256 length = recipients.length;
         for (uint256 i = 0; i < length;) {
             _removeAllowedERC20TokenRecipient(token, recipients[i]);
@@ -192,12 +199,12 @@ contract TargetRegistry is Ownable, Pausable {
         address to,
         address smartWallet
     ) external view returns (bool) {
-        // If token is not in allowed list, allow all transfers
-        if (!allowedERC20Tokens[token]) {
+        // If token is not in restricted list, allow all transfers
+        if (!restrictedERC20Tokens[token]) {
             return true;
         }
         
-        // For allowed tokens (with restrictions), check if `to` is authorized
+        // For restricted tokens, check if `to` is authorized
         // Pass token parameter to check allowedERC20TokenRecipients
         return _isAuthorizedRecipient(to, smartWallet, token);
     }
@@ -209,7 +216,7 @@ contract TargetRegistry is Ownable, Pausable {
      * @param selectors Array of function selectors
      * @return operationIds Array of operation IDs from TimelockController
      */
-    function scheduleAdd(address[] memory targets, bytes4[] memory selectors) 
+    function scheduleAdd(address[] calldata targets, bytes4[] calldata selectors) 
         external 
         onlyOwner 
         whenNotPaused
@@ -233,7 +240,7 @@ contract TargetRegistry is Ownable, Pausable {
      * @param selectors Array of function selectors
      * @return operationIds Array of operation IDs from TimelockController
      */
-    function scheduleRemove(address[] memory targets, bytes4[] memory selectors) 
+    function scheduleRemove(address[] calldata targets, bytes4[] calldata selectors) 
         external 
         onlyOwner 
         whenNotPaused
@@ -256,7 +263,7 @@ contract TargetRegistry is Ownable, Pausable {
      * @param targets Array of target addresses
      * @param selectors Array of selectors
      */
-    function executeOperation(address[] memory targets, bytes4[] memory selectors) external {
+    function executeOperation(address[] calldata targets, bytes4[] calldata selectors) external {
         uint256 length = targets.length;
         if (length == 0) revert EmptyBatch();
         if (length != selectors.length) revert LengthMismatch();
@@ -273,7 +280,7 @@ contract TargetRegistry is Ownable, Pausable {
      * @param targets Array of target addresses
      * @param selectors Array of selectors
      */
-    function cancelOperation(address[] memory targets, bytes4[] memory selectors) external onlyOwner {
+    function cancelOperation(address[] calldata targets, bytes4[] calldata selectors) external onlyOwner {
         uint256 length = targets.length;
         if (length == 0) revert EmptyBatch();
         if (length != selectors.length) revert LengthMismatch();
@@ -289,29 +296,42 @@ contract TargetRegistry is Ownable, Pausable {
     //////////////////////////////////////////////////////////////*/
     
     /**
-     * @notice Internal function to add ERC20 token to allowed list
-     * @dev Internal implementation for single token addition
-     * @param token The ERC20 token address
+     * @notice Generate unique salt for operation scheduling
+     * @dev Combines target, selector, timestamp, and block randomness for uniqueness
+     * @param target The target address
+     * @param selector The function selector
+     * @return Unique salt for timelock operation
      */
-    function _addAllowedERC20Token(address token) internal {
-        if (token == address(0)) revert InvalidERC20Token();
-        if (allowedERC20Tokens[token]) revert AlreadyWhitelisted();
-        
-        allowedERC20Tokens[token] = true;
-        emit ERC20TokenRestrictionAdded(token, true);
+    function _newSalt(address target, bytes4 selector) internal view returns (bytes32) {
+        // Use target, selector, timestamp, and block.prevrandao for uniqueness
+        // This allows re-scheduling the same (target, selector) pair multiple times
+        return keccak256(abi.encodePacked(target, selector, block.timestamp, block.prevrandao));
     }
     
     /**
-     * @notice Internal function to remove ERC20 token from allowed list
+     * @notice Internal function to add ERC20 token to restricted list
+     * @dev Internal implementation for single token addition
+     * @param token The ERC20 token address
+     */
+    function _addRestrictedERC20Token(address token) internal {
+        if (token == address(0)) revert InvalidERC20Token();
+        if (restrictedERC20Tokens[token]) revert AlreadyWhitelisted();
+        
+        restrictedERC20Tokens[token] = true;
+        emit RestrictedERC20TokenChanged(token, true);
+    }
+    
+    /**
+     * @notice Internal function to remove ERC20 token from restricted list
      * @dev Internal implementation for single token removal
      * @param token The ERC20 token address
      */
-    function _removeAllowedERC20Token(address token) internal {
+    function _removeRestrictedERC20Token(address token) internal {
         if (token == address(0)) revert InvalidERC20Token();
-        if (!allowedERC20Tokens[token]) revert NotWhitelisted();
+        if (!restrictedERC20Tokens[token]) revert NotWhitelisted();
         
-        allowedERC20Tokens[token] = false;
-        emit ERC20TokenRestrictionAdded(token, false);
+        restrictedERC20Tokens[token] = false;
+        emit RestrictedERC20TokenChanged(token, false);
     }
     
     /**
@@ -323,7 +343,7 @@ contract TargetRegistry is Ownable, Pausable {
     function _addAllowedERC20TokenRecipient(address token, address recipient) internal {
         if (token == address(0)) revert InvalidERC20Token();
         if (recipient == address(0)) revert InvalidRecipient();
-        if (!allowedERC20Tokens[token]) revert NotWhitelisted(); // Token must be in allowedERC20Tokens
+        if (!restrictedERC20Tokens[token]) revert NotWhitelisted(); // Token must be in restrictedERC20Tokens
         if (allowedERC20TokenRecipients[token][recipient]) revert AlreadyWhitelisted();
         
         allowedERC20TokenRecipients[token][recipient] = true;
@@ -350,7 +370,7 @@ contract TargetRegistry is Ownable, Pausable {
      * @dev Checks if `to` is the smart wallet itself, one of its owners, or an explicitly authorized recipient
      * @param to The recipient address
      * @param smartWallet The smart wallet address
-     * @param token The ERC20 token address (for checking allowedERC20TokenRecipients)
+     * @param token The ERC20 token address (for checking allowedERC20TokenRecipients for restricted tokens)
      * @return True if authorized
      */
     function _isAuthorizedRecipient(
@@ -358,12 +378,17 @@ contract TargetRegistry is Ownable, Pausable {
         address smartWallet,
         address token
     ) internal view virtual returns (bool) {
+        // Check if `to` is an explicitly authorized recipient for this token (cheapest check first)
+        if (allowedERC20TokenRecipients[token][to]) {
+            return true;
+        }
+        
         // Allow transfer to smart wallet itself
         if (to == smartWallet) {
             return true;
         }
         
-        // Check if `to` is one of the smart wallet's owners
+        // Check if `to` is one of the smart wallet's owners (external call, more expensive)
         try ISafeWallet(smartWallet).getOwners() returns (address[] memory owners) {
             uint256 length = owners.length; // Cache length for gas savings
             for (uint256 i = 0; i < length;) {
@@ -374,11 +399,6 @@ contract TargetRegistry is Ownable, Pausable {
             }
         } catch {
             // If getOwners() fails, continue to next check
-        }
-        
-        // NEW: Check if `to` is an explicitly authorized recipient for this token
-        if (allowedERC20TokenRecipients[token][to]) {
-            return true;
         }
         
         return false;
@@ -395,6 +415,10 @@ contract TargetRegistry is Ownable, Pausable {
         if (target == address(0)) revert InvalidTarget();
         if (selector == bytes4(0)) revert InvalidSelector();
         if (whitelist[target][selector]) revert AlreadyWhitelisted();
+        if (opMeta[target][selector].operationId != bytes32(0)) revert PendingOperationExists();
+        
+        // Generate unique salt for this operation
+        bytes32 salt = _newSalt(target, selector);
         
         // Prepare the call to _addToWhitelist
         bytes memory data = abi.encodeWithSelector(
@@ -409,7 +433,7 @@ contract TargetRegistry is Ownable, Pausable {
             0,
             data,
             bytes32(0),
-            bytes32(uint256(uint160(target)) ^ uint256(uint32(selector)))
+            salt
         );
         
         timelock.schedule(
@@ -417,12 +441,16 @@ contract TargetRegistry is Ownable, Pausable {
             0,
             data,
             bytes32(0),
-            bytes32(uint256(uint160(target)) ^ uint256(uint32(selector))),
+            salt,
             1 days
         );
         
-        // Store reverse lookup
-        targetSelectorToOpId[target][selector] = operationId;
+        // Store operation metadata (for execution and re-scheduling)
+        opMeta[target][selector] = OpMeta({
+            operationId: operationId,
+            isAdd: true,
+            salt: salt
+        });
         
         emit TargetSelectorScheduled(
             operationId,
@@ -445,6 +473,10 @@ contract TargetRegistry is Ownable, Pausable {
         if (target == address(0)) revert InvalidTarget();
         if (selector == bytes4(0)) revert InvalidSelector();
         if (!whitelist[target][selector]) revert NotWhitelisted();
+        if (opMeta[target][selector].operationId != bytes32(0)) revert PendingOperationExists();
+        
+        // Generate unique salt for this operation
+        bytes32 salt = _newSalt(target, selector);
         
         // Prepare the call to _removeFromWhitelist
         bytes memory data = abi.encodeWithSelector(
@@ -459,7 +491,7 @@ contract TargetRegistry is Ownable, Pausable {
             0,
             data,
             bytes32(0),
-            bytes32(uint256(uint160(target)) ^ uint256(uint32(selector)))
+            salt
         );
         
         timelock.schedule(
@@ -467,12 +499,16 @@ contract TargetRegistry is Ownable, Pausable {
             0,
             data,
             bytes32(0),
-            bytes32(uint256(uint160(target)) ^ uint256(uint32(selector))),
+            salt,
             1 days
         );
         
-        // Store reverse lookup
-        targetSelectorToOpId[target][selector] = operationId;
+        // Store operation metadata (for execution and re-scheduling)
+        opMeta[target][selector] = OpMeta({
+            operationId: operationId,
+            isAdd: false,
+            salt: salt
+        });
         
         emit TargetSelectorScheduled(
             operationId,
@@ -491,20 +527,26 @@ contract TargetRegistry is Ownable, Pausable {
      * @param selector The selector
      */
     function _executeOperation(address target, bytes4 selector) internal {
-        // Determine operation type based on current whitelist status
-        bool isAdd = !whitelist[target][selector];
-        bytes memory data = isAdd 
+        // Get stored operation metadata (don't infer from current state!)
+        OpMeta memory meta = opMeta[target][selector];
+        require(meta.operationId != bytes32(0), "No scheduled operation");
+        
+        // Prepare data based on stored operation type
+        bytes memory data = meta.isAdd 
             ? abi.encodeWithSelector(this._addToWhitelist.selector, target, selector)
             : abi.encodeWithSelector(this._removeFromWhitelist.selector, target, selector);
         
-        // Execute via TimelockController
+        // Execute via TimelockController with stored operation ID and salt
         timelock.execute(
             address(this),
             0,
             data,
             bytes32(0),
-            bytes32(uint256(uint160(target)) ^ uint256(uint32(selector)))
+            meta.salt
         );
+        
+        // Clear metadata to allow future re-scheduling of this (target, selector)
+        delete opMeta[target][selector];
     }
     
     /**
@@ -514,11 +556,13 @@ contract TargetRegistry is Ownable, Pausable {
      * @param selector The selector
      */
     function _cancelOperation(address target, bytes4 selector) internal {
-        bytes32 operationId = targetSelectorToOpId[target][selector];
+        OpMeta memory meta = opMeta[target][selector];
+        require(meta.operationId != bytes32(0), "No scheduled operation");
         
-        timelock.cancel(operationId);
+        timelock.cancel(meta.operationId);
         
-        delete targetSelectorToOpId[target][selector];
+        // Clear metadata to allow future re-scheduling
+        delete opMeta[target][selector];
     }
     
     /**
@@ -570,7 +614,7 @@ contract TargetRegistry is Ownable, Pausable {
         view 
         returns (bytes32) 
     {
-        return targetSelectorToOpId[target][selector];
+        return opMeta[target][selector].operationId;
     }
     
     /**
@@ -584,7 +628,7 @@ contract TargetRegistry is Ownable, Pausable {
         view 
         returns (bool) 
     {
-        bytes32 operationId = targetSelectorToOpId[target][selector];
+        bytes32 operationId = opMeta[target][selector].operationId;
         return timelock.isOperationReady(operationId);
     }
     
@@ -599,7 +643,7 @@ contract TargetRegistry is Ownable, Pausable {
         view 
         returns (bool) 
     {
-        bytes32 operationId = targetSelectorToOpId[target][selector];
+        bytes32 operationId = opMeta[target][selector].operationId;
         return timelock.isOperationPending(operationId);
     }
     
@@ -614,7 +658,7 @@ contract TargetRegistry is Ownable, Pausable {
         view 
         returns (uint256) 
     {
-        bytes32 operationId = targetSelectorToOpId[target][selector];
+        bytes32 operationId = opMeta[target][selector].operationId;
         return timelock.getTimestamp(operationId);
     }
 }

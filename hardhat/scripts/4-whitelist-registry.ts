@@ -72,15 +72,15 @@ async function main() {
   // TargetRegistry ABI (updated for batch operations)
   const registryAbi = parseAbi([
     // Batch operations
-    "function scheduleAdd(address[] memory targets, bytes4[] memory selectors) external returns (bytes32[] memory operationIds)",
-    "function scheduleRemove(address[] memory targets, bytes4[] memory selectors) external returns (bytes32[] memory operationIds)",
-    "function executeOperation(address[] memory targets, bytes4[] memory selectors) external",
-    "function cancelOperation(address[] memory targets, bytes4[] memory selectors) external",
+    "function scheduleAdd(address[] calldata targets, bytes4[] calldata selectors) external returns (bytes32[] memory operationIds)",
+    "function scheduleRemove(address[] calldata targets, bytes4[] calldata selectors) external returns (bytes32[] memory operationIds)",
+    "function executeOperation(address[] calldata targets, bytes4[] calldata selectors) external",
+    "function cancelOperation(address[] calldata targets, bytes4[] calldata selectors) external",
     // ERC20 operations
-    "function addAllowedERC20Token(address[] memory tokens) external",
-    "function removeAllowedERC20Token(address[] memory tokens) external",
-    "function addAllowedERC20TokenRecipient(address token, address[] memory recipients) external",
-    "function removeAllowedERC20TokenRecipient(address token, address[] memory recipients) external",
+    "function addRestrictedERC20Token(address[] calldata tokens) external",
+    "function removeRestrictedERC20Token(address[] calldata tokens) external",
+    "function addAllowedERC20TokenRecipient(address token, address[] calldata recipients) external",
+    "function removeAllowedERC20TokenRecipient(address token, address[] calldata recipients) external",
     // View functions
     "function isWhitelisted(address target, bytes4 selector) external view returns (bool)",
     "function isOperationReady(address target, bytes4 selector) external view returns (bool)",
@@ -221,13 +221,13 @@ async function main() {
     });
     console.log("✅ Transaction confirmed!");
     
-    // Step 2: Add USDC to allowedERC20Tokens (no timelock, executes immediately)
-    console.log("\n🚀 Step 2: Adding USDC to allowedERC20Tokens...");
+    // Step 2: Add USDC to restrictedERC20Tokens (no timelock, executes immediately)
+    console.log("\n🚀 Step 2: Adding USDC to restrictedERC20Tokens...");
     const addTokenHash = await walletClient.sendTransaction({
       to: registryAddress as Address,
       data: encodeFunctionData({
         abi: registryAbi,
-        functionName: 'addAllowedERC20Token',
+        functionName: 'addRestrictedERC20Token',
         args: [[USDC_ADDRESS]],
       }),
     });

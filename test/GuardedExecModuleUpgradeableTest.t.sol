@@ -102,7 +102,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         // Add USDC as restricted token (immediate, no timelock needed)
         address[] memory usdcTokenArray = new address[](1);
         usdcTokenArray[0] = address(usdcToken);
-        registry.addAllowedERC20Token(usdcTokenArray);
+        registry.addRestrictedERC20Token(usdcTokenArray);
         
         // Fast forward time by 1 day + 1 second
         vm.warp(block.timestamp + 1 days + 1);
@@ -158,7 +158,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         // Add USDC as restricted token
         address[] memory usdcArray2 = new address[](1);
         usdcArray2[0] = address(usdcToken);
-        registry.addAllowedERC20Token(usdcArray2);
+        registry.addRestrictedERC20Token(usdcArray2);
         
         // Schedule and execute whitelist operations
         address[] memory scheduleTargets2 = new address[](5);
@@ -284,7 +284,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
      */
     function test_ModuleConfiguration() public {
         // Check registry is set correctly
-        address moduleRegistry = guardedModule.getRegistry();
+        address moduleRegistry = address(guardedModule.registry());
         
         assertEq(moduleRegistry, address(registry), "Registry should match");
         
@@ -375,7 +375,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         // Add the same whitelist entries
         address[] memory usdcArray3 = new address[](1);
         usdcArray3[0] = address(usdcToken);
-        newRegistry.addAllowedERC20Token(usdcArray3);
+        newRegistry.addRestrictedERC20Token(usdcArray3);
         address[] memory scheduleTargets3 = new address[](2);
         scheduleTargets3[0] = address(uniswapPool);
         scheduleTargets3[1] = address(usdcToken);
@@ -554,7 +554,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         assertEq(guardedModule.name(), "GuardedExecModuleUpgradeable", "Should be V1");
         
         // Store state
-        address reg = guardedModule.getRegistry();
+        address reg = address(guardedModule.registry());
         address ownerAddr = guardedModule.owner();
         
         // Deploy and upgrade to V2 (using mock contract for testing)
@@ -580,7 +580,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         assertEq(v2Module.name(), "MockGuardedExecModuleUpgradeableV2", "Is V2");
         
         // Verify state persisted
-        assertEq(address(v2Module.getRegistry()), reg, "Registry persisted");
+        assertEq(address(v2Module.registry()), reg, "Registry persisted");
         assertEq(v2Module.owner(), ownerAddr, "Owner persisted");
         assertEq(v2Module.upgradeMessage(), "V2!", "V2 message set");
     }
@@ -755,25 +755,25 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         vm.startPrank(registryOwner);
         
         // Test adding restricted token
-        assertFalse(registry.allowedERC20Tokens(address(wethToken)), "WETH not allowed initially");
+        assertFalse(registry.restrictedERC20Tokens(address(wethToken)), "WETH not restricted initially");
         address[] memory wethArray = new address[](1);
         wethArray[0] = address(wethToken);
-        registry.addAllowedERC20Token(wethArray);
-        assertTrue(registry.allowedERC20Tokens(address(wethToken)), "WETH now allowed");
+        registry.addRestrictedERC20Token(wethArray);
+        assertTrue(registry.restrictedERC20Tokens(address(wethToken)), "WETH now restricted");
         
         // Test removing restricted token
-        registry.removeAllowedERC20Token(wethArray);
-        assertFalse(registry.allowedERC20Tokens(address(wethToken)), "WETH no longer allowed");
+        registry.removeRestrictedERC20Token(wethArray);
+        assertFalse(registry.restrictedERC20Tokens(address(wethToken)), "WETH no longer restricted");
         
         // Test adding same token twice (should fail)
         vm.expectRevert();
         address[] memory usdcArray4 = new address[](1);
         usdcArray4[0] = address(usdcToken);
-        registry.addAllowedERC20Token(usdcArray4); // Already allowed
+        registry.addRestrictedERC20Token(usdcArray4); // Already restricted
         
         // Test removing non-restricted token (should fail)
         vm.expectRevert();
-        registry.removeAllowedERC20Token(wethArray); // Not restricted
+        registry.removeRestrictedERC20Token(wethArray); // Not restricted
         
         vm.stopPrank();
     }

@@ -36,6 +36,9 @@ contract MockGuardedExecModuleUpgradeableV2 is
     TargetRegistry public registry;
     uint256 public upgradeCounter; // NEW in V2 - for testing upgrade tracking
     string public upgradeMessage; // NEW in V2 - for testing upgrade initialization
+    
+    /// @notice Storage gap for future variables in upgrades
+    uint256[47] private __gapMockV2;
 
     /*//////////////////////////////////////////////////////////////
                                ERRORS
@@ -141,17 +144,14 @@ contract MockGuardedExecModuleUpgradeableV2 is
     }
 
     function _validateERC20Transfer(address token, bytes calldata callData) internal view {
-        if (callData.length < MIN_TRANSFER_LENGTH) revert InvalidCalldata();
+        // Standard ERC20 transfer is exactly 68 bytes: 4 (selector) + 32 (to) + 32 (amount)
+        if (callData.length != MIN_TRANSFER_LENGTH) revert InvalidCalldata();
         
         address to = abi.decode(callData[4:36], (address));
 
         if (!registry.isERC20TransferAuthorized(token, to, msg.sender)) {
             revert UnauthorizedERC20Transfer(token, to);
         }
-    }
-
-    function getRegistry() external view returns (address) {
-        return address(registry);
     }
 
     function updateRegistry(address newRegistry) external onlyOwner {

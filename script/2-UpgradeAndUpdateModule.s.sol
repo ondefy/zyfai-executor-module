@@ -63,8 +63,8 @@ contract UpgradeAndUpdateModule is Script {
         
         // Verify deployment
         console.log("\n=== Verification ===");
-        assert(proxy.getRegistry() == newRegistryAddress);
-        console.log("Registry verified:", proxy.getRegistry());
+        assert(address(proxy.registry()) == newRegistryAddress);
+        console.log("Registry verified:", address(proxy.registry()));
         console.log("Owner:", proxy.owner());
         
         console.log("\n=== Deployment Success ===");
