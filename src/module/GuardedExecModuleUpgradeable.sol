@@ -47,6 +47,11 @@ contract GuardedExecModuleUpgradeable is
     TargetRegistry public registry;
 
     /*//////////////////////////////////////////////////////////////
+                               EVENTS
+    //////////////////////////////////////////////////////////////*/
+    event RegistryUpdated(address indexed oldRegistry, address indexed newRegistry);
+
+    /*//////////////////////////////////////////////////////////////
                                ERRORS
     //////////////////////////////////////////////////////////////*/
     error InvalidRegistry();
@@ -229,7 +234,11 @@ contract GuardedExecModuleUpgradeable is
      */
     function updateRegistry(address newRegistry) external onlyOwner {
         if (newRegistry == address(0)) revert InvalidRegistry();
+        
+        address oldRegistry = address(registry);
         registry = TargetRegistry(newRegistry);
+        
+        emit RegistryUpdated(oldRegistry, newRegistry);
     }
 
     /*//////////////////////////////////////////////////////////////
