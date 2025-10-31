@@ -97,7 +97,7 @@ contract TargetRegistry is Ownable, Pausable {
      * @param admin Address that can schedule operations (should be multisig)
      */
     constructor(address admin) Ownable(admin) {
-        // Create TimelockController with 1 day delay
+        // Create TimelockController with 1 minute delay
         address[] memory proposers = new address[](1);
         address[] memory executors = new address[](1);
         
@@ -105,7 +105,7 @@ contract TargetRegistry is Ownable, Pausable {
         executors[0] = address(0); // Anyone can execute after timelock
         
         timelock = new TimelockController(
-            1 days, // minDelay
+            1 minutes, // minDelay
             proposers,
             executors,
             address(0) // No admin (immutable roles)
@@ -134,7 +134,7 @@ contract TargetRegistry is Ownable, Pausable {
     
     /**
      * @notice Add ERC20 token(s) to restricted list (batch operation)
-     * @dev Only owner can add restricted tokens. These tokens will have transfer monitoring enabled. Pass array of 1 for single token.
+     * @dev Owner only. Enables transfer monitoring. Pass array of 1 for single token.
      * @param tokens Array of ERC20 token addresses
      */
     function addRestrictedERC20Token(address[] calldata tokens) external onlyOwner {
@@ -147,7 +147,7 @@ contract TargetRegistry is Ownable, Pausable {
     
     /**
      * @notice Remove ERC20 token(s) from restricted list (batch operation)
-     * @dev Only owner can remove restricted tokens. Transfers will no longer be monitored. Pass array of 1 for single token.
+     * @dev Owner only. Disables transfer monitoring. Pass array of 1 for single token.
      * @param tokens Array of ERC20 token addresses
      */
     function removeRestrictedERC20Token(address[] calldata tokens) external onlyOwner {
@@ -160,7 +160,7 @@ contract TargetRegistry is Ownable, Pausable {
     
     /**
      * @notice Add authorized recipient(s) for a specific ERC20 token (batch operation)
-     * @dev Only owner can add authorized recipients. Token must be in restrictedERC20Tokens. Pass array of 1 for single recipient.
+     * @dev Owner only. Token must be in restrictedERC20Tokens. Pass array of 1 for single recipient.
      * @param token The ERC20 token address
      * @param recipients Array of recipient addresses that will be authorized to receive the token
      */
@@ -442,7 +442,7 @@ contract TargetRegistry is Ownable, Pausable {
             data,
             bytes32(0),
             salt,
-            1 days
+            1 minutes
         );
         
         // Store operation metadata (for execution and re-scheduling)
@@ -456,7 +456,7 @@ contract TargetRegistry is Ownable, Pausable {
             operationId,
             target,
             selector,
-            block.timestamp + 1 days
+            block.timestamp + 1 minutes
         );
         
         return operationId;
@@ -500,7 +500,7 @@ contract TargetRegistry is Ownable, Pausable {
             data,
             bytes32(0),
             salt,
-            1 days
+            1 minutes
         );
         
         // Store operation metadata (for execution and re-scheduling)
@@ -514,7 +514,7 @@ contract TargetRegistry is Ownable, Pausable {
             operationId,
             target,
             selector,
-            block.timestamp + 1 days
+            block.timestamp + 1 minutes
         );
         
         return operationId;

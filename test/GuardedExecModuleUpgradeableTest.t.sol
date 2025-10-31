@@ -104,8 +104,8 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         usdcTokenArray[0] = address(usdcToken);
         registry.addRestrictedERC20Token(usdcTokenArray);
         
-        // Fast forward time by 1 day + 1 second
-        vm.warp(block.timestamp + 1 days + 1);
+        // Fast forward time by 1 minute + 1 second
+        vm.warp(block.timestamp + 1 minutes + 1);
         
         // Execute the operations (ANYONE can execute with OpenZeppelin!)
         registry.executeOperation(scheduleTargets, scheduleSelectors);
@@ -177,8 +177,8 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         
         registry.scheduleAdd(scheduleTargets2, scheduleSelectors2);
         
-        // Fast forward time by 1 day + 1 second
-        vm.warp(block.timestamp + 1 days + 1);
+        // Fast forward time by 1 minute + 1 second
+        vm.warp(block.timestamp + 1 minutes + 1);
         
         // Execute the operations
         registry.executeOperation(scheduleTargets2, scheduleSelectors2);
@@ -701,7 +701,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         registry.scheduleAdd(scheduleTargets4, scheduleSelectors4);
         
         // Fast forward
-        vm.warp(block.timestamp + 1 days + 1);
+        vm.warp(block.timestamp + 1 minutes + 1);
         
         // Random user executes (this is an OpenZeppelin feature!)
         address randomUser = makeAddr("randomUser");

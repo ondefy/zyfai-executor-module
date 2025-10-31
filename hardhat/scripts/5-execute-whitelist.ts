@@ -23,7 +23,7 @@ dotenv.config({ path: join(__dirname, "..", ".env") });
  * - AAVE Pool: supply(), withdraw()
  * - USDC: approve(), transfer()
  * 
- * Make sure operations were scheduled at least 1 day ago using 4-whitelist-registry.ts.
+ * Make sure operations were scheduled at least 1 minute ago using 4-whitelist-registry.ts.
  * 
  * Targets:
  * - AAVE Pool: 0xA238Dd80C259a72e81d7e4664a9801593F98d1c5
@@ -190,6 +190,7 @@ async function main() {
     console.log("\n🔍 Checking operation status...");
     let hasPending = false;
     for (let i = 0; i < targets.length; i++) {
+      console.log("Checking operation status for:", targets[i], selectors[i]);
       const isPending = await publicClient.readContract({
         address: registryAddress as Address,
         abi: registryAbi,

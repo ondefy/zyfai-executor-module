@@ -20,12 +20,12 @@ dotenv.config({ path: join(__dirname, "..", ".env") });
 /**
  * Schedule whitelist operations in TargetRegistry (BATCH)
  * 
- * This script schedules adding multiple functions to the whitelist (1 day timelock):
+ * This script schedules adding multiple functions to the whitelist (1 minute timelock):
  * - AAVE Pool: supply(), withdraw()
  * - USDC: approve(), transfer()
- * - Also adds USDC to allowedERC20Tokens
+ * - Also adds USDC to restrictedERC20Tokens
  * 
- * After scheduling, wait 1 day and use 5-execute-whitelist.ts to execute.
+ * After scheduling, wait 1 minute and use 5-execute-whitelist.ts to execute.
  * 
  * Targets:
  * - AAVE Pool: 0xA238Dd80C259a72e81d7e4664a9801593F98d1c5
@@ -240,11 +240,11 @@ async function main() {
     const addTokenReceipt = await publicClient.waitForTransactionReceipt({
       hash: addTokenHash,
     });
-    console.log("✅ USDC added to allowedERC20Tokens!");
+    console.log("✅ USDC added to restrictedERC20Tokens!");
     
     console.log("\n✅✅ Batch Whitelist Setup Complete!");
     console.log("\n⏰ Next Steps:");
-    console.log("  - Wait 1 day for whitelist operations to be ready");
+    console.log("  - Wait 1 minute for whitelist operations to be ready");
     console.log("  - Run: pnpm run execute-whitelist");
     
   } catch (error: any) {

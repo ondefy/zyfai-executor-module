@@ -43,8 +43,8 @@ contract TargetRegistryTest is Test {
         
         vm.stopPrank();
         
-        // Fast forward 1 day
-        vm.warp(block.timestamp + 1 days + 1);
+        // Fast forward 1 minute
+        vm.warp(block.timestamp + 1 minutes + 1);
         
         // Now it should be ready
         isReady = registry.isOperationReady(mockTarget, SWAP_SELECTOR);
@@ -72,8 +72,8 @@ contract TargetRegistryTest is Test {
         vm.expectRevert();
         registry.executeOperation(targets, selectors);
         
-        // Try after 23 hours (should still fail)
-        vm.warp(block.timestamp + 23 hours);
+        // Try after 30 seconds (should still fail)
+        vm.warp(block.timestamp + 30 seconds);
         vm.expectRevert();
         registry.executeOperation(targets, selectors);
     }
@@ -88,7 +88,7 @@ contract TargetRegistryTest is Test {
         registry.scheduleAdd(targets, selectors);
         
         // Fast forward
-        vm.warp(block.timestamp + 1 days + 1);
+        vm.warp(block.timestamp + 1 minutes + 1);
         
         // Random user can execute
         address randomUser = makeAddr("randomUser");
@@ -382,21 +382,21 @@ contract TargetRegistryTest is Test {
         // Step 1: Add
         vm.prank(owner);
         registry.scheduleAdd(targets, selectors);
-        vm.warp(block.timestamp + 1 days + 1);
+        vm.warp(block.timestamp + 1 minutes + 1);
         registry.executeOperation(targets, selectors);
         assertTrue(registry.isWhitelisted(mockTarget, SWAP_SELECTOR), "Should be whitelisted after add");
         
         // Step 2: Remove
         vm.prank(owner);
         registry.scheduleRemove(targets, selectors);
-        vm.warp(block.timestamp + 1 days + 1);
+        vm.warp(block.timestamp + 1 minutes + 1);
         registry.executeOperation(targets, selectors);
         assertFalse(registry.isWhitelisted(mockTarget, SWAP_SELECTOR), "Should not be whitelisted after remove");
         
         // Step 3: Add again (this would have FAILED before the fix!)
         vm.prank(owner);
         registry.scheduleAdd(targets, selectors); // ✅ Should work now with unique salt!
-        vm.warp(block.timestamp + 1 days + 1);
+        vm.warp(block.timestamp + 1 minutes + 1);
         registry.executeOperation(targets, selectors);
         assertTrue(registry.isWhitelisted(mockTarget, SWAP_SELECTOR), "Should be whitelisted after second add");
     }
