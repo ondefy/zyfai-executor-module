@@ -187,39 +187,6 @@ contract TargetRegistryTest is Test {
     }
     
     /**
-     * @notice TEST 8: ERC20 restriction management
-     */
-    function test_ERC20RestrictionManagement() public {
-        address usdcToken = makeAddr("usdcToken");
-        address wethToken = makeAddr("wethToken");
-        
-        vm.startPrank(owner);
-        
-        // Test adding restricted token
-        assertFalse(registry.restrictedERC20Tokens(usdcToken), "USDC not restricted initially");
-        address[] memory tokens = new address[](1);
-        tokens[0] = usdcToken;
-        registry.addRestrictedERC20Token(tokens);
-        assertTrue(registry.restrictedERC20Tokens(usdcToken), "USDC now restricted");
-        
-        // Test adding same token twice (should fail)
-        vm.expectRevert();
-        registry.addRestrictedERC20Token(tokens);
-        
-        // Test removing restricted token
-        registry.removeRestrictedERC20Token(tokens);
-        assertFalse(registry.restrictedERC20Tokens(usdcToken), "USDC no longer restricted");
-        
-        // Test removing non-restricted token (should fail)
-        address[] memory wethArray = new address[](1);
-        wethArray[0] = wethToken;
-        vm.expectRevert();
-        registry.removeRestrictedERC20Token(wethArray);
-        
-        vm.stopPrank();
-    }
-    
-    /**
      * @notice TEST 9: ERC20 transfer authorization with mock Safe wallet
      */
     function test_ERC20TransferAuthorization() public {
@@ -239,27 +206,31 @@ contract TargetRegistryTest is Test {
         // Deploy test registry with mock Safe
         TestTargetRegistryWithMockSafe testRegistry = new TestTargetRegistryWithMockSafe(owner, address(mockSafe));
         
-        vm.startPrank(owner);
-        
-        // Add USDC as restricted token
-        address[] memory usdcArray1 = new address[](1);
-        usdcArray1[0] = usdcToken;
-        testRegistry.addRestrictedERC20Token(usdcArray1);
-        
-        vm.stopPrank();
-        
-        // Test 1: Non-restricted token should allow all transfers
+        // All tokens are now effectively restricted by default
+        // Test 1: Any token transfer to random address should fail
         address wethToken = makeAddr("wethToken");
-        assertTrue(testRegistry.isERC20TransferAuthorized(wethToken, randomAddress, smartWallet), "Non-restricted token allows all transfers");
+        assertFalse(
+            testRegistry.isERC20TransferAuthorized(wethToken, randomAddress, smartWallet), 
+            "Non-authorized recipient blocked"
+        );
         
-        // Test 2: Restricted token transfer to smart wallet itself should work
-        assertTrue(testRegistry.isERC20TransferAuthorized(usdcToken, smartWallet, smartWallet), "Transfer to smart wallet itself allowed");
+        // Test 2: Transfer to smart wallet itself should work
+        assertTrue(
+            testRegistry.isERC20TransferAuthorized(usdcToken, smartWallet, smartWallet), 
+            "Transfer to smart wallet itself allowed"
+        );
         
-        // Test 3: Restricted token transfer to Safe owner should work
-        assertTrue(testRegistry.isERC20TransferAuthorized(usdcToken, owner1, smartWallet), "Transfer to Safe owner allowed");
+        // Test 3: Transfer to Safe owner should work
+        assertTrue(
+            testRegistry.isERC20TransferAuthorized(usdcToken, owner1, smartWallet), 
+            "Transfer to Safe owner allowed"
+        );
         
-        // Test 4: Restricted token transfer to random address should fail
-        assertFalse(testRegistry.isERC20TransferAuthorized(usdcToken, randomAddress, smartWallet), "Transfer to random address blocked");
+        // Test 4: Transfer to random address should fail
+        assertFalse(
+            testRegistry.isERC20TransferAuthorized(usdcToken, randomAddress, smartWallet), 
+            "Transfer to random address blocked"
+        );
         
         // Test 5: Test with updated owners
         address[] memory newOwners = new address[](3);
@@ -270,7 +241,10 @@ contract TargetRegistryTest is Test {
         mockSafe.setOwners(newOwners);
         
         // Now transfer to owner2 should work
-        assertTrue(testRegistry.isERC20TransferAuthorized(usdcToken, owner2, smartWallet), "Transfer to new Safe owner allowed");
+        assertTrue(
+            testRegistry.isERC20TransferAuthorized(usdcToken, owner2, smartWallet), 
+            "Transfer to new Safe owner allowed"
+        );
     }
     
     /**
@@ -292,28 +266,32 @@ contract TargetRegistryTest is Test {
         
         vm.startPrank(owner);
         
-        // Add USDC as restricted token
-        address[] memory usdcArray2 = new address[](1);
-        usdcArray2[0] = usdcToken;
-        testRegistry.addRestrictedERC20Token(usdcArray2);
-        
         // Add fee vault as allowed recipient
         address[] memory feeVaultArray1 = new address[](1);
         feeVaultArray1[0] = feeVault;
         testRegistry.addAllowedERC20TokenRecipient(usdcToken, feeVaultArray1);
         
         // Verify transfer to fee vault is authorized
-        assertTrue(testRegistry.isERC20TransferAuthorized(usdcToken, feeVault, smartWallet), "Transfer to fee vault should be authorized");
+        assertTrue(
+            testRegistry.isERC20TransferAuthorized(usdcToken, feeVault, smartWallet), 
+            "Transfer to fee vault should be authorized"
+        );
         
         // Verify transfer to random address is NOT authorized
         address randomAddress = makeAddr("randomAddress");
-        assertFalse(testRegistry.isERC20TransferAuthorized(usdcToken, randomAddress, smartWallet), "Transfer to random address should not be authorized");
+        assertFalse(
+            testRegistry.isERC20TransferAuthorized(usdcToken, randomAddress, smartWallet), 
+            "Transfer to random address should not be authorized"
+        );
         
         // Remove fee vault from allowed recipients
         testRegistry.removeAllowedERC20TokenRecipient(usdcToken, feeVaultArray1);
         
         // Verify transfer to fee vault is now NOT authorized
-        assertFalse(testRegistry.isERC20TransferAuthorized(usdcToken, feeVault, smartWallet), "Transfer to fee vault should not be authorized after removal");
+        assertFalse(
+            testRegistry.isERC20TransferAuthorized(usdcToken, feeVault, smartWallet), 
+            "Transfer to fee vault should not be authorized after removal"
+        );
         
         vm.stopPrank();
     }
@@ -327,11 +305,6 @@ contract TargetRegistryTest is Test {
         address morphoAdapter = makeAddr("morphoAdapter");
         
         vm.startPrank(owner);
-        
-        // Add USDC as restricted token
-        address[] memory usdcArray = new address[](1);
-        usdcArray[0] = usdcToken;
-        registry.addRestrictedERC20Token(usdcArray);
         
         // Test adding fee vault as allowed recipient
         assertFalse(registry.allowedERC20TokenRecipients(usdcToken, feeVault), "Fee vault not allowed initially");
@@ -357,11 +330,6 @@ contract TargetRegistryTest is Test {
         // Test removing non-allowed recipient (should fail)
         vm.expectRevert();
         registry.removeAllowedERC20TokenRecipient(usdcToken, feeVaultArray); // Not allowed
-        
-        // Test adding recipient for token not in restrictedERC20Tokens (should fail)
-        registry.removeRestrictedERC20Token(usdcArray);
-        vm.expectRevert();
-        registry.addAllowedERC20TokenRecipient(usdcToken, feeVaultArray); // USDC not in restrictedERC20Tokens
         
         vm.stopPrank();
     }

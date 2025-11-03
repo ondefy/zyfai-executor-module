@@ -33,12 +33,8 @@ contract TargetRegistry is Ownable, Pausable {
     }
     mapping(address => mapping(bytes4 => OpMeta)) public opMeta;
     
-    /// @notice ERC20 tokens with restricted transfers (e.g., USDC)
-    /// @dev When true, transfers to arbitrary addresses are blocked; only authorized recipients allowed
-    mapping(address => bool) public restrictedERC20Tokens;
-    
     /// @notice Authorized recipients for specific ERC20 tokens
-    /// @dev For restricted tokens, this maps: token => recipient => is allowed
+    /// @dev This maps: token => recipient => is allowed
     mapping(address => mapping(address => bool)) public allowedERC20TokenRecipients;
 
     /*//////////////////////////////////////////////////////////////
@@ -60,11 +56,6 @@ contract TargetRegistry is Ownable, Pausable {
     event TargetSelectorRemoved(
         address indexed target,
         bytes4 indexed selector
-    );
-    
-    event RestrictedERC20TokenChanged(
-        address indexed token,
-        bool restricted
     );
     
     event ERC20TokenRecipientAuthorized(
@@ -133,34 +124,8 @@ contract TargetRegistry is Ownable, Pausable {
     }
     
     /**
-     * @notice Add ERC20 token(s) to restricted list (batch operation)
-     * @dev Owner only. Enables transfer monitoring. Pass array of 1 for single token.
-     * @param tokens Array of ERC20 token addresses
-     */
-    function addRestrictedERC20Token(address[] calldata tokens) external onlyOwner {
-        uint256 length = tokens.length;
-        for (uint256 i = 0; i < length;) {
-            _addRestrictedERC20Token(tokens[i]);
-            unchecked { ++i; }
-        }
-    }
-    
-    /**
-     * @notice Remove ERC20 token(s) from restricted list (batch operation)
-     * @dev Owner only. Disables transfer monitoring. Pass array of 1 for single token.
-     * @param tokens Array of ERC20 token addresses
-     */
-    function removeRestrictedERC20Token(address[] calldata tokens) external onlyOwner {
-        uint256 length = tokens.length;
-        for (uint256 i = 0; i < length;) {
-            _removeRestrictedERC20Token(tokens[i]);
-            unchecked { ++i; }
-        }
-    }
-    
-    /**
      * @notice Add authorized recipient(s) for a specific ERC20 token (batch operation)
-     * @dev Owner only. Token must be in restrictedERC20Tokens. Pass array of 1 for single recipient.
+     * @dev Owner only. Pass array of 1 for single recipient.
      * @param token The ERC20 token address
      * @param recipients Array of recipient addresses that will be authorized to receive the token
      */
@@ -187,8 +152,8 @@ contract TargetRegistry is Ownable, Pausable {
     }
     
     /**
-     * @notice Check if ERC20 transfer is authorized for restricted tokens
-     * @dev For restricted tokens, `to` must be smart wallet, one of its owners, or an explicitly authorized recipient
+     * @notice Check if ERC20 transfer is authorized
+     * @dev `to` must be smart wallet, one of its owners, or an explicitly authorized recipient
      * @param token The ERC20 token address
      * @param to The recipient address
      * @param smartWallet The smart wallet address
@@ -199,13 +164,6 @@ contract TargetRegistry is Ownable, Pausable {
         address to,
         address smartWallet
     ) external view returns (bool) {
-        // If token is not in restricted list, allow all transfers
-        if (!restrictedERC20Tokens[token]) {
-            return true;
-        }
-        
-        // For restricted tokens, check if `to` is authorized
-        // Pass token parameter to check allowedERC20TokenRecipients
         return _isAuthorizedRecipient(to, smartWallet, token);
     }
     
@@ -307,33 +265,7 @@ contract TargetRegistry is Ownable, Pausable {
         // This allows re-scheduling the same (target, selector) pair multiple times
         return keccak256(abi.encodePacked(target, selector, block.timestamp, block.prevrandao));
     }
-    
-    /**
-     * @notice Internal function to add ERC20 token to restricted list
-     * @dev Internal implementation for single token addition
-     * @param token The ERC20 token address
-     */
-    function _addRestrictedERC20Token(address token) internal {
-        if (token == address(0)) revert InvalidERC20Token();
-        if (restrictedERC20Tokens[token]) revert AlreadyWhitelisted();
-        
-        restrictedERC20Tokens[token] = true;
-        emit RestrictedERC20TokenChanged(token, true);
-    }
-    
-    /**
-     * @notice Internal function to remove ERC20 token from restricted list
-     * @dev Internal implementation for single token removal
-     * @param token The ERC20 token address
-     */
-    function _removeRestrictedERC20Token(address token) internal {
-        if (token == address(0)) revert InvalidERC20Token();
-        if (!restrictedERC20Tokens[token]) revert NotWhitelisted();
-        
-        restrictedERC20Tokens[token] = false;
-        emit RestrictedERC20TokenChanged(token, false);
-    }
-    
+
     /**
      * @notice Internal function to add authorized recipient for ERC20 token
      * @dev Internal implementation for single recipient addition
@@ -343,7 +275,6 @@ contract TargetRegistry is Ownable, Pausable {
     function _addAllowedERC20TokenRecipient(address token, address recipient) internal {
         if (token == address(0)) revert InvalidERC20Token();
         if (recipient == address(0)) revert InvalidRecipient();
-        if (!restrictedERC20Tokens[token]) revert NotWhitelisted(); // Token must be in restrictedERC20Tokens
         if (allowedERC20TokenRecipients[token][recipient]) revert AlreadyWhitelisted();
         
         allowedERC20TokenRecipients[token][recipient] = true;
@@ -370,7 +301,7 @@ contract TargetRegistry is Ownable, Pausable {
      * @dev Checks if `to` is the smart wallet itself, one of its owners, or an explicitly authorized recipient
      * @param to The recipient address
      * @param smartWallet The smart wallet address
-     * @param token The ERC20 token address (for checking allowedERC20TokenRecipients for restricted tokens)
+     * @param token The ERC20 token address
      * @return True if authorized
      */
     function _isAuthorizedRecipient(

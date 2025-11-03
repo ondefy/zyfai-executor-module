@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import { Test, console } from "forge-std/Test.sol";
+import { Test } from "forge-std/Test.sol";
 import { RhinestoneModuleKit, ModuleKitHelpers, AccountInstance } from "modulekit/ModuleKit.sol";
 import { MODULE_TYPE_EXECUTOR } from "modulekit/accounts/common/interfaces/IERC7579Module.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -99,11 +99,6 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         
         registry.scheduleAdd(scheduleTargets, scheduleSelectors);
         
-        // Add USDC as restricted token (immediate, no timelock needed)
-        address[] memory usdcTokenArray = new address[](1);
-        usdcTokenArray[0] = address(usdcToken);
-        registry.addRestrictedERC20Token(usdcTokenArray);
-        
         // Fast forward time by 1 minute + 1 second
         vm.warp(block.timestamp + 1 minutes + 1);
         
@@ -154,11 +149,6 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         vm.startPrank(registryOwner);
         registry = new TestTargetRegistryWithMockSafe(registryOwner, address(mockSafeWallet));
         vm.label(address(registry), "TestTargetRegistryWithMockSafe");
-        
-        // Add USDC as restricted token
-        address[] memory usdcArray2 = new address[](1);
-        usdcArray2[0] = address(usdcToken);
-        registry.addRestrictedERC20Token(usdcArray2);
         
         // Schedule and execute whitelist operations
         address[] memory scheduleTargets2 = new address[](5);
@@ -373,9 +363,6 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         vm.label(address(newRegistry), "NewRegistry");
         
         // Add the same whitelist entries
-        address[] memory usdcArray3 = new address[](1);
-        usdcArray3[0] = address(usdcToken);
-        newRegistry.addRestrictedERC20Token(usdcArray3);
         address[] memory scheduleTargets3 = new address[](2);
         scheduleTargets3[0] = address(uniswapPool);
         scheduleTargets3[1] = address(usdcToken);
@@ -478,13 +465,16 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
             )
         });
         
-        // Test 3: Transfer WETH to random address (should work - not restricted)
+        // Test 3: Transfer to random address should FAIL (always restricted now)
         address randomAddress = makeAddr("randomAddress");
         wethToken.mint(smartAccount, 1 ether);
         targets[0] = address(wethToken);
         calldatas[0] = abi.encodeWithSelector(TRANSFER_SELECTOR, randomAddress, 0.1 ether);
         values[0] = 0;
         
+        instance.expect4337Revert(
+            GuardedExecModuleUpgradeable.UnauthorizedERC20Transfer.selector
+        );
         instance.exec({
             target: address(guardedModule),
             value: 0,
@@ -510,37 +500,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         bytes[] memory calldatas = new bytes[](1);
         uint256[] memory values = new uint256[](1);
         
-        // First verify WETH is NOT restricted - should allow all transfers
-        assertFalse(registry.restrictedERC20Tokens(address(wethToken)), "WETH should NOT be restricted initially");
-        
-        // Test 1: Transfer WETH to random address should work (not restricted)
-        targets[0] = address(wethToken);
-        calldatas[0] = abi.encodeWithSelector(TRANSFER_SELECTOR, randomAddress, 0.1 ether);
-        values[0] = 0;
-        
-        instance.exec({
-            target: address(guardedModule),
-            value: 0,
-            callData: abi.encodeWithSelector(
-                GuardedExecModuleUpgradeable.executeGuardedBatch.selector,
-                targets,
-                calldatas,
-                values
-            )
-        });
-
-        // Now add WETH to restricted list
-        vm.startPrank(registryOwner);
-        address[] memory wethArray = new address[](1);
-        wethArray[0] = address(wethToken);
-        registry.addRestrictedERC20Token(wethArray);
-        vm.stopPrank();
-        
-        // Verify WETH is now restricted
-        assertTrue(registry.restrictedERC20Tokens(address(wethToken)), "WETH should NOW be restricted");
-        
-        // Test 2: Transfer WETH to random address should FAIL (now restricted)
-        wethToken.mint(smartAccount, 1 ether); // Mint more WETH
+        // Test 1: Transfer to random address should FAIL (always restricted now)
         targets[0] = address(wethToken);
         calldatas[0] = abi.encodeWithSelector(TRANSFER_SELECTOR, randomAddress, 0.1 ether);
         values[0] = 0;
@@ -558,21 +518,45 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
                 values
             )
         });
-        
-        // Now remove WETH from restricted list
+
+        // Test 2: Add randomAddress as allowed recipient and retry
         vm.startPrank(registryOwner);
-        registry.removeRestrictedERC20Token(wethArray);
+        address[] memory recipients = new address[](1);
+        recipients[0] = randomAddress;
+        registry.addAllowedERC20TokenRecipient(address(wethToken), recipients);
         vm.stopPrank();
         
-        // Verify WETH is NO LONGER restricted
-        assertFalse(registry.restrictedERC20Tokens(address(wethToken)), "WETH should be UNRESTRICTED again");
-        
-        // Test 3: Transfer WETH to random address should work again (unrestricted)
-        wethToken.mint(smartAccount, 1 ether); // Mint more WETH
+        // Mint more WETH and try transfer again (should work now)
+        wethToken.mint(smartAccount, 1 ether);
         targets[0] = address(wethToken);
         calldatas[0] = abi.encodeWithSelector(TRANSFER_SELECTOR, randomAddress, 0.1 ether);
         values[0] = 0;
         
+        instance.exec({
+            target: address(guardedModule),
+            value: 0,
+            callData: abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.executeGuardedBatch.selector,
+                targets,
+                calldatas,
+                values
+            )
+        });
+        
+        // Test 3: Remove randomAddress from allowed recipients
+        vm.startPrank(registryOwner);
+        registry.removeAllowedERC20TokenRecipient(address(wethToken), recipients);
+        vm.stopPrank();
+        
+        // Test 4: Transfer should FAIL again
+        wethToken.mint(smartAccount, 1 ether);
+        targets[0] = address(wethToken);
+        calldatas[0] = abi.encodeWithSelector(TRANSFER_SELECTOR, randomAddress, 0.1 ether);
+        values[0] = 0;
+        
+        instance.expect4337Revert(
+            GuardedExecModuleUpgradeable.UnauthorizedERC20Transfer.selector
+        );
         instance.exec({
             target: address(guardedModule),
             value: 0,
@@ -600,14 +584,14 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         bool isAuthorized2 = registry.isERC20TransferAuthorized(address(usdcToken), owners[1], smartAccount);
         assertTrue(isAuthorized2, "Transfer to Safe owner should be authorized");
         
-        // Test 3: Transfer to random address (should not be authorized)
+        // Test 3: Transfer to random address (should not be authorized - all tokens restricted now)
         address randomAddress = makeAddr("randomAddress");
         bool isAuthorized3 = registry.isERC20TransferAuthorized(address(usdcToken), randomAddress, smartAccount);
         assertFalse(isAuthorized3, "Transfer to random address should not be authorized");
         
-        // Test 4: Transfer WETH to random address (should be authorized - not restricted)
+        // Test 4: Transfer WETH to random address (should also not be authorized - all tokens restricted now)
         bool isAuthorized4 = registry.isERC20TransferAuthorized(address(wethToken), randomAddress, smartAccount);
-        assertTrue(isAuthorized4, "Transfer WETH to random address should be authorized (not restricted)");
+        assertFalse(isAuthorized4, "Transfer WETH to random address should not be authorized (all tokens restricted)");
     }
     
     /**
@@ -837,36 +821,6 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 19: Registry ERC20 restriction management
-     */
-    function test_RegistryERC20RestrictionManagement() public {
-        vm.startPrank(registryOwner);
-        
-        // Test adding restricted token
-        assertFalse(registry.restrictedERC20Tokens(address(wethToken)), "WETH not restricted initially");
-        address[] memory wethArray = new address[](1);
-        wethArray[0] = address(wethToken);
-        registry.addRestrictedERC20Token(wethArray);
-        assertTrue(registry.restrictedERC20Tokens(address(wethToken)), "WETH now restricted");
-        
-        // Test removing restricted token
-        registry.removeRestrictedERC20Token(wethArray);
-        assertFalse(registry.restrictedERC20Tokens(address(wethToken)), "WETH no longer restricted");
-        
-        // Test adding same token twice (should fail)
-        vm.expectRevert();
-        address[] memory usdcArray4 = new address[](1);
-        usdcArray4[0] = address(usdcToken);
-        registry.addRestrictedERC20Token(usdcArray4); // Already restricted
-        
-        // Test removing non-restricted token (should fail)
-        vm.expectRevert();
-        registry.removeRestrictedERC20Token(wethArray); // Not restricted
-        
-        vm.stopPrank();
-    }
-    
-    /**
      * @notice TEST 20: ERC20 transfer restrictions with mock Safe wallet
      */
     function test_ERC20TransferRestrictionsWithMockSafe() public {
@@ -911,7 +865,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
             )
         });
         
-        // Test 3: Transfer to random address (should fail)
+        // Test 3: Transfer to random address (should fail - always restricted now)
         address randomAddress = makeAddr("randomAddress");
         calldatas[0] = abi.encodeWithSelector(TRANSFER_SELECTOR, randomAddress, 100 * 10**6);
         values[0] = 0;
@@ -920,12 +874,15 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         bool isAuthorized = registry.isERC20TransferAuthorized(address(usdcToken), randomAddress, smartAccount);
         assertFalse(isAuthorized, "Transfer to random address should not be authorized");
         
-        // Test 4: Transfer WETH to random address (should work - not restricted)
+        // Test 4: Transfer WETH to random address (should fail - always restricted now)
         wethToken.mint(smartAccount, 1 ether);
         targets[0] = address(wethToken);
         calldatas[0] = abi.encodeWithSelector(TRANSFER_SELECTOR, randomAddress, 0.1 ether);
         values[0] = 0;
         
+        instance.expect4337Revert(
+            GuardedExecModuleUpgradeable.UnauthorizedERC20Transfer.selector
+        );
         instance.exec({
             target: address(guardedModule),
             value: 0,

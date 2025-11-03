@@ -23,7 +23,6 @@ dotenv.config({ path: join(__dirname, "..", ".env") });
  * This script schedules adding multiple functions to the whitelist (1 minute timelock):
  * - AAVE Pool: supply(), withdraw()
  * - USDC: approve(), transfer()
- * - Also adds USDC to restrictedERC20Tokens
  * 
  * After scheduling, wait 1 minute and use 5-execute-whitelist.ts to execute.
  * 
@@ -77,8 +76,6 @@ async function main() {
     "function executeOperation(address[] calldata targets, bytes4[] calldata selectors) external",
     "function cancelOperation(address[] calldata targets, bytes4[] calldata selectors) external",
     // ERC20 operations
-    "function addRestrictedERC20Token(address[] calldata tokens) external",
-    "function removeRestrictedERC20Token(address[] calldata tokens) external",
     "function addAllowedERC20TokenRecipient(address token, address[] calldata recipients) external",
     "function removeAllowedERC20TokenRecipient(address token, address[] calldata recipients) external",
     // View functions
@@ -220,27 +217,6 @@ async function main() {
       hash: scheduleHash,
     });
     console.log("✅ Transaction confirmed!");
-    
-    // Step 2: Add USDC to restrictedERC20Tokens (no timelock, executes immediately)
-    console.log("\n🚀 Step 2: Adding USDC to restrictedERC20Tokens...");
-    const addTokenHash = await walletClient.sendTransaction({
-      to: registryAddress as Address,
-      data: encodeFunctionData({
-        abi: registryAbi,
-        functionName: 'addRestrictedERC20Token',
-        args: [[USDC_ADDRESS]],
-      }),
-    });
-    
-    console.log("✅ Transaction sent!");
-    console.log("  Transaction hash:", addTokenHash);
-    
-    // Wait for confirmation
-    console.log("\n⏳ Waiting for transaction confirmation...");
-    const addTokenReceipt = await publicClient.waitForTransactionReceipt({
-      hash: addTokenHash,
-    });
-    console.log("✅ USDC added to restrictedERC20Tokens!");
     
     console.log("\n✅✅ Batch Whitelist Setup Complete!");
     console.log("\n⏰ Next Steps:");

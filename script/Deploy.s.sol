@@ -45,7 +45,6 @@
 //         console.log("AAVE supply whitelisted:", registry.isWhitelisted(0xA238Dd80C259a72e81d7e4664a9801593F98d1c5, 0x617ba037));
 //         console.log("USDC transfer whitelisted:", registry.isWhitelisted(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913, 0xa9059cbb));
 //         console.log("USDC approve whitelisted:", registry.isWhitelisted(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913, 0x095ea7b3));
-//         console.log("USDC is restricted ERC20:", registry.restrictedERC20Tokens(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913));
         
 //         // Save addresses to file
 //         string memory addresses = string(abi.encodePacked(
