@@ -11,12 +11,12 @@ import { TargetRegistry } from "../registry/TargetRegistry.sol";
 
 /**
  * @title GuardedExecModuleUpgradeable
- * @author Zyfi
- * @notice GuardedExecModule executor module using OpenZeppelin UUPS upgradeable pattern
- * @dev This module allows session keys to execute whitelisted DeFi operations
- *      while maintaining smart account context (msg.sender = smart account).
- *      Pausable functionality provides emergency stop for compromised session keys.
- *      Upgradeable via UUPS pattern to allow fixing bugs and adding features.
+ * @author ZyFAI
+ * @notice Executor module that allows session keys to execute whitelisted DeFi operations
+ *         while maintaining smart account context. Uses UUPS upgradeable pattern.
+ * @dev Session keys can execute batch operations on whitelisted target+selector combinations.
+ *      All executions maintain smart account context (msg.sender = smart account).
+ *      Security: Whitelist validation, ERC20 transfer restrictions, pausable, upgradeable.
  */
 contract GuardedExecModuleUpgradeable is 
     ERC7579ExecutorBase,
@@ -28,49 +28,89 @@ contract GuardedExecModuleUpgradeable is
                                CONSTANTS
     //////////////////////////////////////////////////////////////*/
     
-    /// @notice ERC20 transfer selector constant for gas optimization
+    /**
+     * @notice ERC20 transfer function selector for gas optimization
+     * @dev Used to identify ERC20 transfer calls for additional authorization checks
+     */
     bytes4 private constant TRANSFER_SELECTOR = IERC20.transfer.selector;
     
-    /// @notice Minimum calldata length for selector extraction
+    /**
+     * @notice Minimum calldata length required to extract function selector
+     * @dev Function selector is 4 bytes, so calldata must be at least 4 bytes
+     */
     uint256 private constant MIN_SELECTOR_LENGTH = 4;
     
-    /// @notice Minimum calldata length for ERC20 transfer validation
-    /// @dev 4 bytes (selector) + 32 bytes (to) + 32 bytes (amount) = 68 bytes
+    /**
+     * @notice Minimum calldata length for ERC20 transfer validation
+     * @dev Standard ERC20 transfer: 4 bytes (selector) + 32 bytes (to) + 32 bytes (amount) = 68 bytes
+     */
     uint256 private constant MIN_TRANSFER_LENGTH = 68;
 
     /*//////////////////////////////////////////////////////////////
                                STORAGE
     //////////////////////////////////////////////////////////////*/
     
-    /// @notice Registry for target + selector whitelist verification
-    /// @dev Can be changed via upgrade in case of registry migration
+    /**
+     * @notice Registry contract for target + selector whitelist verification
+     * @dev Used to verify if target+selector combinations are whitelisted.
+     *      Can be updated via updateRegistry for migration.
+     */
     TargetRegistry public registry;
     
-    /// @notice Storage gap for future variables in upgrades
+    /**
+     * @notice Storage gap for future variables in upgrades
+     * @dev Prevents storage layout collisions in future upgrades. Reserved 50 storage slots.
+     */
     uint256[50] private __gapGuardedExecModule;
 
     /*//////////////////////////////////////////////////////////////
                                EVENTS
     //////////////////////////////////////////////////////////////*/
+    
+    /**
+     * @notice Emitted when the registry address is updated
+     * @param oldRegistry The previous registry address
+     * @param newRegistry The new registry address
+     */
     event RegistryUpdated(address indexed oldRegistry, address indexed newRegistry);
 
     /*//////////////////////////////////////////////////////////////
                                ERRORS
     //////////////////////////////////////////////////////////////*/
+    
+    /// @notice Thrown when registry address is zero
     error InvalidRegistry();
+    
+    /// @notice Thrown when batch operation arrays are empty
     error EmptyBatch();
+    
+    /// @notice Thrown when array lengths don't match
     error LengthMismatch();
+    
+    /// @notice Thrown when target+selector combination is not whitelisted
+    /// @param target The target contract address
+    /// @param selector The function selector
     error TargetSelectorNotWhitelisted(address target, bytes4 selector);
+    
+    /// @notice Thrown when ERC20 transfer is attempted to unauthorized recipient
+    /// @param token The ERC20 token address
+    /// @param to The unauthorized recipient address
     error UnauthorizedERC20Transfer(address token, address to);
+    
+    /// @notice Thrown when calldata is invalid (too short or malformed)
     error InvalidCalldata();
 
     /*//////////////////////////////////////////////////////////////
                              CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
     
+    /**
+     * @notice Constructor for implementation contract
+     * @dev Disables initialization in implementation contract to prevent direct use.
+     *      Only proxy instances should be initialized via initialize().
+     */
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
-        // Disable initialization in implementation contract
         _disableInitializers();
     }
 
@@ -80,9 +120,9 @@ contract GuardedExecModuleUpgradeable is
     
     /**
      * @notice Initialize the module with registry and owner
-     * @dev Can only be called once by the proxy
+     * @dev Can only be called once by the proxy. Initializes Ownable, Pausable, and UUPS upgradeable.
      * @param _registry Address of the TargetRegistry contract
-     * @param _owner Address that can pause/unpause and upgrade (should be multisig)
+     * @param _owner Address that can pause/unpause and upgrade (should be multisig for production)
      */
     function initialize(address _registry, address _owner) external initializer {
         if (_registry == address(0)) revert InvalidRegistry();
@@ -100,15 +140,15 @@ contract GuardedExecModuleUpgradeable is
     
     /**
      * @notice Returns the human-readable name of the module
-     * @return Module name
+     * @return Module name string
      */
     function name() external pure returns (string memory) {
         return "GuardedExecModuleUpgradeable";
     }
     
     /**
-     * @notice Returns the version of the module
-     * @return Semantic version string
+     * @notice Returns the semantic version of the module
+     * @return Version string
      */
     function version() external pure returns (string memory) {
         return "2.0.0";
@@ -116,26 +156,27 @@ contract GuardedExecModuleUpgradeable is
 
     /**
      * @notice Checks if this contract implements the specified module type
-     * @param typeId The module type ID to check (2 = EXECUTOR)
+     * @dev Returns true for typeId == 2 (MODULE_TYPE_EXECUTOR)
+     * @param typeId The module type ID to check
      * @return True if this is an executor module
      */
     function isModuleType(uint256 typeId) external pure override returns (bool) {
-        return typeId == 2; // MODULE_TYPE_EXECUTOR
+        return typeId == 2;
     }
 
     /**
      * @notice Checks if the module is initialized for a smart account
-     * @dev Always returns true as configuration is immutable per account
+     * @dev Always returns true as module configuration is immutable per account (registry set during initialization).
+     *      Parameter is unused but required by ERC7579 interface.
      * @return True (always initialized)
      */
     function isInitialized(address) external pure override returns (bool) {
-        // Always initialized as configuration is immutable
         return true;
     }
     
     /**
      * @notice Pause the module (emergency stop)
-     * @dev Stops all executeGuardedBatch calls - use if session key compromised
+     * @dev Blocks all executeGuardedBatch calls. Use if session key is compromised or critical vulnerability discovered.
      */
     function pause() external onlyOwner {
         _pause();
@@ -143,7 +184,7 @@ contract GuardedExecModuleUpgradeable is
     
     /**
      * @notice Unpause the module
-     * @dev Allows executeGuardedBatch calls again
+     * @dev Resumes normal operation, allowing executeGuardedBatch calls again.
      */
     function unpause() external onlyOwner {
         _unpause();
@@ -151,53 +192,46 @@ contract GuardedExecModuleUpgradeable is
     
     /**
      * @notice Module installation hook (no-op)
-     * @dev Registry is set during initialization, no per-account configuration needed
+     * @dev Registry is set during initialization, no per-account configuration needed. Required by ERC7579 interface.
+     * @param data Installation data (unused)
      */
-    function onInstall(bytes calldata) external override {
+    function onInstall(bytes calldata data) external override {
         // No-op: Configuration is set during initialization
     }
 
     /**
      * @notice Module uninstallation hook (no-op)
-     * @dev No storage to clean up
+     * @dev No storage to clean up. Required by ERC7579 interface.
+     * @param data Uninstallation data (unused)
      */
-    function onUninstall(bytes calldata) external override {
+    function onUninstall(bytes calldata data) external override {
         // No-op: No storage to clean up
     }
     
     /**
      * @notice Execute a batch of whitelisted calls to DeFi protocols
-     * @dev All target+selector combinations must be whitelisted in the registry
-     *      Execution maintains smart account context (msg.sender = smart account)
-     *      Can be paused in emergency (e.g., compromised session key)
-     * 
+     * @dev Permissionless function. All target+selector combinations must be whitelisted.
+     *      Executions maintain smart account context (msg.sender = smart account).
+     *      All validations occur before execution (checks-effects-interactions pattern).
      * @param targets Array of target contract addresses
      * @param calldatas Array of encoded function calls
-     * @param values Array of native asset values (ETH) to send with each call
-     * @custom:security-note This function can be called by anyone (e.g., session keys)
-     *                        but only whitelisted target+selector combinations can be called
-     *                        Can be emergency stopped by pause controller
-     * @custom:optimization Gas-optimized with unchecked increments and cached lengths
+     * @param values Array of native ETH values to send with each call
      */
     function executeGuardedBatch(
         address[] calldata targets,
         bytes[] calldata calldatas,
         uint256[] calldata values
     ) external whenNotPaused {
-        // Input validation
-        uint256 length = targets.length; // Cache length for gas savings
+        uint256 length = targets.length;
         if (length == 0) revert EmptyBatch();
         if (length != calldatas.length) revert LengthMismatch();
         if (length != values.length) revert LengthMismatch();
         
-        // Build execution array (allocate once)
         Execution[] memory executions = new Execution[](length);
-        
-        // Cache registry for gas optimization
         TargetRegistry reg = registry;
         
         // Single-pass validation and execution array building
-        // SECURITY: All validations happen before any execution
+        // All validations happen before any execution (security best practice)
         for (uint256 i = 0; i < length;) {
             bytes calldata currentCalldata = calldatas[i];
             address currentTarget = targets[i];
@@ -207,36 +241,34 @@ contract GuardedExecModuleUpgradeable is
             if (currentCalldata.length < MIN_SELECTOR_LENGTH) revert InvalidCalldata();
             bytes4 selector = bytes4(currentCalldata[:4]);
             
-            // SECURITY CHECK 1: Whitelist verification
+            // Security check 1: Verify target+selector is whitelisted
             if (!reg.isWhitelisted(currentTarget, selector)) {
                 revert TargetSelectorNotWhitelisted(currentTarget, selector);
             }
             
-            // SECURITY CHECK 2: ERC20 transfer authorization check
+            // Security check 2: Validate ERC20 transfer authorization if this is a transfer
             if (selector == TRANSFER_SELECTOR) {
                 _validateERC20Transfer(currentTarget, currentCalldata, reg);
             }
             
             // Build execution after all validations pass
-            // NOTE: value field supports native ETH transfers (e.g., for ETH vaults)
             executions[i] = Execution({
                 target: currentTarget,
                 value: currentValue,
                 callData: currentCalldata
             });
             
-            unchecked { ++i; } // Safe: i < length, cannot overflow
+            unchecked { ++i; }
         }
         
-        // Execute batch via smart account
-        // This maintains msg.sender = smart account in all calls
+        // Execute batch via smart account (maintains msg.sender = smart account)
         _execute(executions);
     }
 
     /**
      * @notice Update the registry address (for migration)
-     * @dev Only owner can update the registry
-     * @param newRegistry The new registry address
+     * @dev Owner only. Allows updating registry if needed for migration or upgrades.
+     * @param newRegistry The new TargetRegistry contract address
      */
     function updateRegistry(address newRegistry) external onlyOwner {
         if (newRegistry == address(0)) revert InvalidRegistry();
@@ -252,27 +284,28 @@ contract GuardedExecModuleUpgradeable is
     //////////////////////////////////////////////////////////////*/
     
     /**
-     * @notice Authorize an upgrade
-     * @dev Only owner can authorize upgrades
-     * @param newImplementation The address of the new implementation
+     * @notice Authorize an upgrade (UUPS pattern)
+     * @dev Owner only. Called by UUPSUpgradeable when upgrade is attempted.
+     * @param newImplementation The address of the new implementation contract
      */
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
     
     /**
-     * @notice Validate ERC20 transfer for allowed tokens
-     * @dev Checks if transfer recipient is authorized (smart wallet or owner)
+     * @notice Validate ERC20 transfer authorization
+     * @dev Validates calldata format and checks if transfer recipient is authorized.
+     *      Recipient must be: smart wallet itself, wallet owner, or explicitly authorized.
      * @param token The ERC20 token address
-     * @param callData The encoded transfer call data
-     * @param reg The cached registry instance (for gas optimization)
+     * @param callData The encoded transfer(address to, uint256 amount) call data
+     * @param reg The cached registry instance for authorization check
      */
     function _validateERC20Transfer(address token, bytes calldata callData, TargetRegistry reg) internal view {
-        // Decode transfer(address to, uint256 amount) parameters
-        // Standard ERC20 transfer is exactly 68 bytes: 4 (selector) + 32 (to) + 32 (amount)
+        // Standard ERC20 transfer must be exactly 68 bytes: 4 (selector) + 32 (to) + 32 (amount)
         if (callData.length != MIN_TRANSFER_LENGTH) revert InvalidCalldata();
         
+        // Extract recipient address from calldata (bytes 4-35)
         address to = abi.decode(callData[4:36], (address));
 
-        // Check if this transfer is authorized for allowed tokens
+        // Check if recipient is authorized (wallet itself, owner, or explicitly authorized)
         if (!reg.isERC20TransferAuthorized(token, to, msg.sender)) {
             revert UnauthorizedERC20Transfer(token, to);
         }

@@ -99,8 +99,8 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         
         registry.scheduleAdd(scheduleTargets, scheduleSelectors);
         
-        // Fast forward time by 1 minute + 1 second
-        vm.warp(block.timestamp + 1 minutes + 1);
+        // Fast forward time by 1 day + 1 second
+        vm.warp(block.timestamp + 1 days + 1);
         
         // Execute the operations (ANYONE can execute with OpenZeppelin!)
         registry.executeOperation(scheduleTargets, scheduleSelectors);
@@ -167,8 +167,8 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         
         registry.scheduleAdd(scheduleTargets2, scheduleSelectors2);
         
-        // Fast forward time by 1 minute + 1 second
-        vm.warp(block.timestamp + 1 minutes + 1);
+        // Fast forward time by 1 day + 1 second
+        vm.warp(block.timestamp + 1 days + 1);
         
         // Execute the operations
         registry.executeOperation(scheduleTargets2, scheduleSelectors2);
@@ -772,8 +772,8 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         scheduleSelectors4[0] = SWAP_SELECTOR;
         registry.scheduleAdd(scheduleTargets4, scheduleSelectors4);
         
-        // Fast forward
-        vm.warp(block.timestamp + 1 minutes + 1);
+        // Fast forward 1 day
+        vm.warp(block.timestamp + 1 days + 1);
         
         // Random user executes (this is an OpenZeppelin feature!)
         address randomUser = makeAddr("randomUser");
