@@ -12,7 +12,7 @@ contract MockDeFiPool {
     /*//////////////////////////////////////////////////////////////
                                EVENTS
     //////////////////////////////////////////////////////////////*/
-    
+
     /**
      * @notice Emitted when swap function is called
      * @param caller The address that called the function
@@ -20,37 +20,37 @@ contract MockDeFiPool {
      * @param amountOut The amount swapped out
      */
     event Swap(address indexed caller, uint256 amountIn, uint256 amountOut);
-    
+
     /**
      * @notice Emitted when deposit function is called
      * @param caller The address that called the function
      * @param amount The amount deposited
      */
     event Deposit(address indexed caller, uint256 amount);
-    
+
     /**
      * @notice Emitted when withdraw function is called
      * @param caller The address that called the function
      * @param amount The amount withdrawn
      */
     event Withdraw(address indexed caller, uint256 amount);
-    
+
     /*//////////////////////////////////////////////////////////////
                                STORAGE
     //////////////////////////////////////////////////////////////*/
-    
+
     /**
      * @notice The address that last called a function on this contract
      * @dev Used to verify msg.sender is the smart account (not the module or session key)
      */
     address public lastCaller;
-    
+
     /**
      * @notice Total number of function calls made to this contract
      * @dev Used to verify functions were called the expected number of times
      */
     uint256 public callCount;
-    
+
     /**
      * @notice Mock swap function
      * @dev Records msg.sender to verify it's the smart account.
@@ -61,18 +61,18 @@ contract MockDeFiPool {
     function swap(uint256 amountIn, uint256) external returns (uint256 amountOut) {
         lastCaller = msg.sender;
         callCount++;
-        
+
         // Mock swap logic - just return 90% of input as output
         amountOut = (amountIn * 90) / 100;
-        
+
         emit Swap(msg.sender, amountIn, amountOut);
         return amountOut;
     }
-    
+
     /*//////////////////////////////////////////////////////////////
                           EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-    
+
     /**
      * @notice Mock deposit function
      * @dev Records msg.sender to verify smart account context
@@ -83,7 +83,7 @@ contract MockDeFiPool {
         callCount++;
         emit Deposit(msg.sender, amount);
     }
-    
+
     /**
      * @notice Mock withdraw function
      * @dev Records msg.sender to verify smart account context
@@ -96,7 +96,7 @@ contract MockDeFiPool {
         emit Withdraw(msg.sender, amount);
         return true;
     }
-    
+
     /**
      * @notice Function that always reverts (for testing error handling)
      * @dev Used to test error propagation in batch operations
@@ -104,7 +104,7 @@ contract MockDeFiPool {
     function failingFunction() external pure {
         revert("Intentional failure");
     }
-    
+
     /**
      * @notice Get information about the last function call
      * @dev Returns the last caller and total call count for test verification
@@ -115,4 +115,3 @@ contract MockDeFiPool {
         return (lastCaller, callCount);
     }
 }
-

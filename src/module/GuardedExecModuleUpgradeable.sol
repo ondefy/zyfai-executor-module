@@ -18,7 +18,7 @@ import { TargetRegistry } from "../registry/TargetRegistry.sol";
  *      All executions maintain smart account context (msg.sender = smart account).
  *      Security: Whitelist validation, ERC20 transfer restrictions, pausable, upgradeable.
  */
-contract GuardedExecModuleUpgradeable is 
+contract GuardedExecModuleUpgradeable is
     ERC7579ExecutorBase,
     OwnableUpgradeable,
     PausableUpgradeable,
@@ -27,36 +27,37 @@ contract GuardedExecModuleUpgradeable is
     /*//////////////////////////////////////////////////////////////
                                CONSTANTS
     //////////////////////////////////////////////////////////////*/
-    
+
     /**
      * @notice ERC20 transfer function selector for gas optimization
      * @dev Used to identify ERC20 transfer calls for additional authorization checks
      */
     bytes4 private constant TRANSFER_SELECTOR = IERC20.transfer.selector;
-    
+
     /**
      * @notice Minimum calldata length required to extract function selector
      * @dev Function selector is 4 bytes, so calldata must be at least 4 bytes
      */
     uint256 private constant MIN_SELECTOR_LENGTH = 4;
-    
+
     /**
      * @notice Minimum calldata length for ERC20 transfer validation
-     * @dev Standard ERC20 transfer: 4 bytes (selector) + 32 bytes (to) + 32 bytes (amount) = 68 bytes
+     * @dev Standard ERC20 transfer: 4 bytes (selector) + 32 bytes (to) + 32 bytes (amount) = 68
+     * bytes
      */
     uint256 private constant MIN_TRANSFER_LENGTH = 68;
 
     /*//////////////////////////////////////////////////////////////
                                STORAGE
     //////////////////////////////////////////////////////////////*/
-    
+
     /**
      * @notice Registry contract for target + selector whitelist verification
      * @dev Used to verify if target+selector combinations are whitelisted.
      *      Can be updated via updateRegistry for migration.
      */
     TargetRegistry public registry;
-    
+
     /**
      * @notice Storage gap for future variables in upgrades
      * @dev Prevents storage layout collisions in future upgrades. Reserved 50 storage slots.
@@ -66,7 +67,7 @@ contract GuardedExecModuleUpgradeable is
     /*//////////////////////////////////////////////////////////////
                                EVENTS
     //////////////////////////////////////////////////////////////*/
-    
+
     /**
      * @notice Emitted when the registry address is updated
      * @param oldRegistry The previous registry address
@@ -77,33 +78,33 @@ contract GuardedExecModuleUpgradeable is
     /*//////////////////////////////////////////////////////////////
                                ERRORS
     //////////////////////////////////////////////////////////////*/
-    
+
     /// @notice Thrown when registry address is zero
     error InvalidRegistry();
-    
+
     /// @notice Thrown when batch operation arrays are empty
     error EmptyBatch();
-    
+
     /// @notice Thrown when array lengths don't match
     error LengthMismatch();
-    
+
     /// @notice Thrown when target+selector combination is not whitelisted
     /// @param target The target contract address
     /// @param selector The function selector
     error TargetSelectorNotWhitelisted(address target, bytes4 selector);
-    
+
     /// @notice Thrown when ERC20 transfer is attempted to unauthorized recipient
     /// @param token The ERC20 token address
     /// @param to The unauthorized recipient address
     error UnauthorizedERC20Transfer(address token, address to);
-    
+
     /// @notice Thrown when calldata is invalid (too short or malformed)
     error InvalidCalldata();
 
     /*//////////////////////////////////////////////////////////////
                              CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
-    
+
     /**
      * @notice Constructor for implementation contract
      * @dev Disables initialization in implementation contract to prevent direct use.
@@ -117,27 +118,28 @@ contract GuardedExecModuleUpgradeable is
     /*//////////////////////////////////////////////////////////////
                              INITIALIZER
     //////////////////////////////////////////////////////////////*/
-    
+
     /**
      * @notice Initialize the module with registry and owner
-     * @dev Can only be called once by the proxy. Initializes Ownable, Pausable, and UUPS upgradeable.
+     * @dev Can only be called once by the proxy. Initializes Ownable, Pausable, and UUPS
+     * upgradeable.
      * @param _registry Address of the TargetRegistry contract
      * @param _owner Address that can pause/unpause and upgrade (should be multisig for production)
      */
     function initialize(address _registry, address _owner) external initializer {
         if (_registry == address(0)) revert InvalidRegistry();
-        
+
         __Ownable_init(_owner);
         __Pausable_init();
         __UUPSUpgradeable_init();
-        
+
         registry = TargetRegistry(_registry);
     }
 
     /*//////////////////////////////////////////////////////////////
                           EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-    
+
     /**
      * @notice Returns the human-readable name of the module
      * @return Module name string
@@ -145,7 +147,7 @@ contract GuardedExecModuleUpgradeable is
     function name() external pure returns (string memory) {
         return "GuardedExecModuleUpgradeable";
     }
-    
+
     /**
      * @notice Returns the semantic version of the module
      * @return Version string
@@ -166,22 +168,24 @@ contract GuardedExecModuleUpgradeable is
 
     /**
      * @notice Checks if the module is initialized for a smart account
-     * @dev Always returns true as module configuration is immutable per account (registry set during initialization).
+     * @dev Always returns true as module configuration is immutable per account (registry set
+     * during initialization).
      *      Parameter is unused but required by ERC7579 interface.
      * @return True (always initialized)
      */
     function isInitialized(address) external pure override returns (bool) {
         return true;
     }
-    
+
     /**
      * @notice Pause the module (emergency stop)
-     * @dev Blocks all executeGuardedBatch calls. Use if session key is compromised or critical vulnerability discovered.
+     * @dev Blocks all executeGuardedBatch calls. Use if session key is compromised or critical
+     * vulnerability discovered.
      */
     function pause() external onlyOwner {
         _pause();
     }
-    
+
     /**
      * @notice Unpause the module
      * @dev Resumes normal operation, allowing executeGuardedBatch calls again.
@@ -189,10 +193,11 @@ contract GuardedExecModuleUpgradeable is
     function unpause() external onlyOwner {
         _unpause();
     }
-    
+
     /**
      * @notice Module installation hook (no-op)
-     * @dev Registry is set during initialization, no per-account configuration needed. Required by ERC7579 interface.
+     * @dev Registry is set during initialization, no per-account configuration needed. Required by
+     * ERC7579 interface.
      * @param data Installation data (unused)
      */
     function onInstall(bytes calldata data) external override {
@@ -207,7 +212,7 @@ contract GuardedExecModuleUpgradeable is
     function onUninstall(bytes calldata data) external override {
         // No-op: No storage to clean up
     }
-    
+
     /**
      * @notice Execute a batch of whitelisted calls to DeFi protocols
      * @dev Permissionless function. All target+selector combinations must be whitelisted.
@@ -221,46 +226,48 @@ contract GuardedExecModuleUpgradeable is
         address[] calldata targets,
         bytes[] calldata calldatas,
         uint256[] calldata values
-    ) external whenNotPaused {
+    )
+        external
+        whenNotPaused
+    {
         uint256 length = targets.length;
         if (length == 0) revert EmptyBatch();
         if (length != calldatas.length) revert LengthMismatch();
         if (length != values.length) revert LengthMismatch();
-        
+
         Execution[] memory executions = new Execution[](length);
         TargetRegistry reg = registry;
-        
+
         // Single-pass validation and execution array building
         // All validations happen before any execution (security best practice)
         for (uint256 i = 0; i < length;) {
             bytes calldata currentCalldata = calldatas[i];
             address currentTarget = targets[i];
             uint256 currentValue = values[i];
-            
+
             // Extract selector from calldata (first 4 bytes)
             if (currentCalldata.length < MIN_SELECTOR_LENGTH) revert InvalidCalldata();
             bytes4 selector = bytes4(currentCalldata[:4]);
-            
+
             // Security check 1: Verify target+selector is whitelisted
             if (!reg.isWhitelisted(currentTarget, selector)) {
                 revert TargetSelectorNotWhitelisted(currentTarget, selector);
             }
-            
+
             // Security check 2: Validate ERC20 transfer authorization if this is a transfer
             if (selector == TRANSFER_SELECTOR) {
                 _validateERC20Transfer(currentTarget, currentCalldata, reg);
             }
-            
+
             // Build execution after all validations pass
-            executions[i] = Execution({
-                target: currentTarget,
-                value: currentValue,
-                callData: currentCalldata
-            });
-            
-            unchecked { ++i; }
+            executions[i] =
+                Execution({ target: currentTarget, value: currentValue, callData: currentCalldata });
+
+            unchecked {
+                ++i;
+            }
         }
-        
+
         // Execute batch via smart account (maintains msg.sender = smart account)
         _execute(executions);
     }
@@ -272,24 +279,24 @@ contract GuardedExecModuleUpgradeable is
      */
     function updateRegistry(address newRegistry) external onlyOwner {
         if (newRegistry == address(0)) revert InvalidRegistry();
-        
+
         address oldRegistry = address(registry);
         registry = TargetRegistry(newRegistry);
-        
+
         emit RegistryUpdated(oldRegistry, newRegistry);
     }
 
     /*//////////////////////////////////////////////////////////////
                           INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-    
+
     /**
      * @notice Authorize an upgrade (UUPS pattern)
      * @dev Owner only. Called by UUPSUpgradeable when upgrade is attempted.
      * @param newImplementation The address of the new implementation contract
      */
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
-    
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner { }
+
     /**
      * @notice Validate ERC20 transfer authorization
      * @dev Validates calldata format and checks if transfer recipient is authorized.
@@ -298,10 +305,17 @@ contract GuardedExecModuleUpgradeable is
      * @param callData The encoded transfer(address to, uint256 amount) call data
      * @param reg The cached registry instance for authorization check
      */
-    function _validateERC20Transfer(address token, bytes calldata callData, TargetRegistry reg) internal view {
+    function _validateERC20Transfer(
+        address token,
+        bytes calldata callData,
+        TargetRegistry reg
+    )
+        internal
+        view
+    {
         // Standard ERC20 transfer must be exactly 68 bytes: 4 (selector) + 32 (to) + 32 (amount)
         if (callData.length != MIN_TRANSFER_LENGTH) revert InvalidCalldata();
-        
+
         // Extract recipient address from calldata (bytes 4-35)
         address to = abi.decode(callData[4:36], (address));
 
@@ -310,5 +324,4 @@ contract GuardedExecModuleUpgradeable is
             revert UnauthorizedERC20Transfer(token, to);
         }
     }
-
 }

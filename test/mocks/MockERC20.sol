@@ -14,7 +14,7 @@ contract MockERC20 is ERC20 {
      * @notice Decimals for this token (configurable in constructor)
      */
     uint8 private _decimals;
-    
+
     /**
      * @notice Constructor for mock ERC20 token
      * @param name Token name
@@ -24,7 +24,7 @@ contract MockERC20 is ERC20 {
     constructor(string memory name, string memory symbol, uint8 decimals_) ERC20(name, symbol) {
         _decimals = decimals_;
     }
-    
+
     /**
      * @notice Returns the number of decimals for the token
      * @return Number of decimals
@@ -32,7 +32,7 @@ contract MockERC20 is ERC20 {
     function decimals() public view override returns (uint8) {
         return _decimals;
     }
-    
+
     /**
      * @notice Mint tokens to an address (for testing only)
      * @dev Permissionless minting - only for test purposes
@@ -43,4 +43,3 @@ contract MockERC20 is ERC20 {
         _mint(to, amount);
     }
 }
-

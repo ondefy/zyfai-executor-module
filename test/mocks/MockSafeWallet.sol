@@ -5,14 +5,15 @@ pragma solidity ^0.8.23;
  * @title MockSafeWallet
  * @author ZyFAI
  * @notice Mock Safe wallet contract for testing purposes - NOT for production use
- * @dev Implements getOwners() function to simulate Safe wallet interface for ERC20 transfer authorization tests
+ * @dev Implements getOwners() function to simulate Safe wallet interface for ERC20 transfer
+ * authorization tests
  */
 contract MockSafeWallet {
     /**
      * @notice Array of owner addresses
      */
     address[] public owners;
-    
+
     /**
      * @notice Constructor for mock Safe wallet
      * @param _owners Array of initial owner addresses
@@ -20,7 +21,7 @@ contract MockSafeWallet {
     constructor(address[] memory _owners) {
         owners = _owners;
     }
-    
+
     /**
      * @notice Get all owner addresses
      * @dev Simulates Safe wallet's getOwners() function used by TargetRegistry
@@ -29,7 +30,7 @@ contract MockSafeWallet {
     function getOwners() external view returns (address[] memory) {
         return owners;
     }
-    
+
     /**
      * @notice Set owner addresses (for testing)
      * @dev Permissionless function for test purposes only
@@ -38,7 +39,7 @@ contract MockSafeWallet {
     function setOwners(address[] memory _owners) external {
         owners = _owners;
     }
-    
+
     /**
      * @notice Add a new owner (for testing)
      * @dev Permissionless function for test purposes only
@@ -47,10 +48,11 @@ contract MockSafeWallet {
     function addOwner(address newOwner) external {
         owners.push(newOwner);
     }
-    
+
     /**
      * @notice Remove an owner (for testing)
-     * @dev Permissionless function for test purposes only. Uses swap-and-pop pattern for gas efficiency.
+     * @dev Permissionless function for test purposes only. Uses swap-and-pop pattern for gas
+     * efficiency.
      * @param ownerToRemove Address of the owner to remove
      */
     function removeOwner(address ownerToRemove) external {
@@ -61,10 +63,12 @@ contract MockSafeWallet {
                 owners.pop();
                 break;
             }
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
     }
-    
+
     /**
      * @notice Get the number of owners
      * @return Number of owners
@@ -72,7 +76,7 @@ contract MockSafeWallet {
     function getOwnerCount() external view returns (uint256) {
         return owners.length;
     }
-    
+
     /**
      * @notice Check if an address is an owner
      * @param account Address to check
@@ -84,9 +88,10 @@ contract MockSafeWallet {
             if (owners[i] == account) {
                 return true;
             }
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
         return false;
     }
 }
-
