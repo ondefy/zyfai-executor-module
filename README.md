@@ -328,39 +328,25 @@ ERC1967Proxy proxy = new ERC1967Proxy(
 smartAccount.installModule(MODULE_TYPE_EXECUTOR, address(proxy), "");
 ```
 
-### Deploy Scripts
+### 🚀 Deploy and Verify (one-liner cheatsheet)
 
 ```bash
 # Deploy TargetRegistry
-PRIVATE_KEY=<key> forge script script/1-DeployTargetRegistry.s.sol \
-    --rpc-url <rpc-url> \
-    --broadcast -vvvv
+PRIVATE_KEY=pk-add-here forge script script/1-DeployTargetRegistry.s.sol --rpc-url https://base-mainnet.g.alchemy.com/v2/key --broadcast -vvvv
 
-# Upgrade and update module
-TARGET_REGISTRY_ADDRESS=<address> forge script script/2-UpgradeAndUpdateModule.s.sol \
-    --rpc-url <rpc-url> \
-    --private-key <key> \
-    --broadcast -vvvv
-```
-
-### Contract Verification
-
-```bash
 # Verify TargetRegistry
-forge verify-contract <ADDRESS> src/registry/TargetRegistry.sol:TargetRegistry \
-    --rpc-url <rpc-url> \
-    --chain-id <chain-id> \
-    --compiler-version 0.8.30 \
-    --etherscan-api-key <key> \
-    --constructor-args <encoded-args>
+forge verify-contract <TARGET_REGISTRY_ADDRESS> src/registry/TargetRegistry.sol:TargetRegistry --rpc-url https://base-mainnet.g.alchemy.com/v2/key --chain-id 8453 --compiler-version 0.8.30 --etherscan-api-key etherscan-key-add-here --constructor-args 0x000000000000000000000000<OWNER_ADDRESS>
 
-# Verify GuardedExecModuleUpgradeable
-forge verify-contract <ADDRESS> src/module/GuardedExecModuleUpgradeable.sol:GuardedExecModuleUpgradeable \
-    --rpc-url <rpc-url> \
-    --chain-id <chain-id> \
-    --compiler-version 0.8.30 \
-    --etherscan-api-key <key>
+# Upgrade Module
+TARGET_REGISTRY_ADDRESS=0xFEe351d2Bf326AAfF9d4621c8BB2Ab7b2fe8780c forge script script/2-UpgradeAndUpdateModule.s.sol --rpc-url https://base-mainnet.g.alchemy.com/v2/key --private-key pk --broadcast -vvvv
+
+# Verify New Impl of Module
+forge verify-contract <NEW_IMPL_ADDRESS> src/module/GuardedExecModuleUpgradeable.sol:GuardedExecModuleUpgradeable --rpc-url https://base-mainnet.g.alchemy.com/v2/key --chain-id 8453 --compiler-version 0.8.30 --etherscan-api-key etherscan-key
+
+# Proxy Verify
+forge verify-contract <PROXY_ADDRESS> lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy --constructor-args 0x000000000000000000000000079c22bbd7b5b91bde24687036d3d3ee2b6c634c00000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000044485cc955000000000000000000000000a0bee327a95f786f5097028ee250c4834dfeb629000000000000000000000000d61c43c089852e0ab68b967dd1ede03a18e5222300000000000000000000000000000000000000000000000000000000 --rpc-url https://base-mainnet.g.alchemy.com/v2/key --chain-id 8453 --compiler-version 0.8.30 --etherscan-api-key etherscan-key
 ```
+
 
 ## 🔒 Security Considerations
 
