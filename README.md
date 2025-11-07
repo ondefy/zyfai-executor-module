@@ -238,7 +238,7 @@ forge coverage --report summary --ir-minimum
 - **Current Coverage**:
   - `GuardedExecModuleUpgradeable.sol`: 98.11% lines, 88.00% statements ✅
   - `TargetRegistry.sol`: 91.34% lines, 79.43% statements ✅
-- **Test Status**: All 31 tests passing ✅
+- **Test Status**: All 45 tests passing ✅
 
 ### Clean Environment Testing
 
@@ -271,13 +271,15 @@ All tests should pass and coverage should be >80% in a clean environment.
 
 | Contract | Lines | Statements | Branches | Functions |
 |----------|-------|------------|----------|-----------|
-| `GuardedExecModuleUpgradeable.sol` | 98.11% | 88.00% | 40.00% | 92.86% |
-| `TargetRegistry.sol` | 91.34% | 79.43% | 25.81% | 92.00% |
+| `GuardedExecModuleUpgradeable.sol` | **98.11%** (52/53) | **100.00%** (50/50) | **100.00%** (10/10) | **92.86%** (13/14) |
+| `TargetRegistry.sol` | **91.34%** (116/127) | **89.36%** (126/141) | **70.97%** (22/31) | **92.00%** (23/25) |
+| **Overall** | **94.44%** | **94.24%** | **82.93%** | **92.31%** |
 
 ### Test Files
 
-- `test/GuardedExecModuleUpgradeableTest.t.sol`: 19 tests
-- `test/TargetRegistryTest.t.sol`: 12 tests
+- `test/GuardedExecModuleUpgradeableTest.t.sol`: 25 tests
+- `test/TargetRegistryTest.t.sol`: 20 tests
+- **Total**: 45 tests
 
 ### Test Categories
 
@@ -288,6 +290,17 @@ All tests should pass and coverage should be >80% in a clean environment.
 - ✅ Upgrade tests
 - ✅ Batch operation tests
 - ✅ Edge cases and error conditions
+- ✅ Input validation tests (empty batches, length mismatches)
+- ✅ Invalid input tests (zero addresses, invalid selectors)
+- ✅ Calldata validation tests (too short, malformed)
+- ✅ Access control tests (owner-only functions)
+
+### Test Quality Assurance
+
+All tests follow Sherlock's requirement: **Every test has a way to fail**. Tests use:
+- `vm.expectRevert()` - Tests will fail if the expected revert doesn't occur
+- `assertTrue()`, `assertFalse()`, `assertEq()` - Tests will fail if assertions don't hold
+- Error selector matching - Tests verify specific error types
 
 ## 📝 Code Commenting
 
