@@ -24,6 +24,13 @@ import { MockGuardedExecModuleUpgradeableV2 } from
 contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     using ModuleKitHelpers for *;
 
+    event GuardedBatchExecuted(
+        address indexed executor,
+        address[] targets,
+        bytes4[] selectors,
+        uint256 timestamp
+    );
+
     // ERC1967 implementation slot
     bytes32 internal constant IMPLEMENTATION_SLOT =
         0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
@@ -259,6 +266,28 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         assertEq(count1, 1);
         assertEq(count2, 1);
         assertEq(count3, 1);
+    }
+
+    /**
+     * @notice Test: GuardedBatchExecuted event emits expected payload
+     */
+    function test_GuardedBatchExecutedEvent() public {
+        address[] memory targets = new address[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
+
+        targets[0] = address(uniswapPool);
+        calldatas[0] = abi.encodeWithSelector(SWAP_SELECTOR, 1000 ether, 900 ether);
+        values[0] = 0;
+
+        bytes4[] memory expectedSelectors = new bytes4[](1);
+        expectedSelectors[0] = SWAP_SELECTOR;
+
+        vm.expectEmit(true, true, true, true, address(guardedModule));
+        emit GuardedBatchExecuted(smartAccount, targets, expectedSelectors, block.timestamp);
+
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(targets, calldatas, values);
     }
 
     /**

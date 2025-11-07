@@ -75,6 +75,20 @@ contract GuardedExecModuleUpgradeable is
      */
     event RegistryUpdated(address indexed oldRegistry, address indexed newRegistry);
 
+    /**
+     * @notice Emitted after a successful guarded batch execution
+     * @param executor The caller that triggered the batch
+     * @param targets Target contract addresses executed in the batch
+     * @param selectors Function selectors extracted from each calldata entry
+     * @param timestamp Block timestamp when the batch executed
+     */
+    event GuardedBatchExecuted(
+        address indexed executor,
+        address[] targets,
+        bytes4[] selectors,
+        uint256 timestamp
+    );
+
     /*//////////////////////////////////////////////////////////////
                                ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -236,6 +250,7 @@ contract GuardedExecModuleUpgradeable is
         if (length != values.length) revert LengthMismatch();
 
         Execution[] memory executions = new Execution[](length);
+        bytes4[] memory selectors = new bytes4[](length);
         TargetRegistry reg = registry;
 
         // Single-pass validation and execution array building
@@ -248,6 +263,7 @@ contract GuardedExecModuleUpgradeable is
             // Extract selector from calldata (first 4 bytes)
             if (currentCalldata.length < MIN_SELECTOR_LENGTH) revert InvalidCalldata();
             bytes4 selector = bytes4(currentCalldata[:4]);
+            selectors[i] = selector;
 
             // Security check 1: Verify target+selector is whitelisted
             if (!reg.isWhitelisted(currentTarget, selector)) {
@@ -270,6 +286,8 @@ contract GuardedExecModuleUpgradeable is
 
         // Execute batch via smart account (maintains msg.sender = smart account)
         _execute(executions);
+
+        emit GuardedBatchExecuted(msg.sender, targets, selectors, block.timestamp);
     }
 
     /**
