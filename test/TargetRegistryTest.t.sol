@@ -23,6 +23,9 @@ contract TargetRegistryTest is Test {
         registry = new TargetRegistry(owner);
     }
 
+    /**
+     * @notice Test: Schedule and execute whitelist addition after timelock delay
+     */
     function test_ScheduleAndExecuteAdd() public {
         vm.startPrank(owner);
         
@@ -31,7 +34,7 @@ contract TargetRegistryTest is Test {
         targets[0] = mockTarget;
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = SWAP_SELECTOR;
-        bytes32[] memory opIds = registry.scheduleAdd(targets, selectors);
+        registry.scheduleAdd(targets, selectors);
         
         // Check it's pending
         bool isPending = registry.isOperationPending(mockTarget, SWAP_SELECTOR);
@@ -59,6 +62,9 @@ contract TargetRegistryTest is Test {
         assertTrue(whitelisted, "Should be whitelisted");
     }
     
+    /**
+     * @notice Test: Cannot execute scheduled operation before timelock expires
+     */
     function test_CannotExecuteBeforeTimelock() public {
         address[] memory targets = new address[](1);
         targets[0] = mockTarget;
@@ -78,6 +84,9 @@ contract TargetRegistryTest is Test {
         registry.executeOperation(targets, selectors);
     }
     
+    /**
+     * @notice Test: Anyone can execute scheduled operation after timelock expires
+     */
     function test_AnyoneCanExecuteAfterTimelock() public {
         address[] memory targets = new address[](1);
         targets[0] = mockTarget;
@@ -99,6 +108,9 @@ contract TargetRegistryTest is Test {
         assertTrue(whitelisted);
     }
     
+    /**
+     * @notice Test: Owner can cancel pending operation before execution
+     */
     function test_CancelOperation() public {
         address[] memory targets = new address[](1);
         targets[0] = mockTarget;
@@ -122,6 +134,9 @@ contract TargetRegistryTest is Test {
         registry.executeOperation(targets, selectors);
     }
     
+    /**
+     * @notice Test: Get operation ID for scheduled operation
+     */
     function test_GetOperationId() public {
         address[] memory targets = new address[](1);
         targets[0] = mockTarget;
@@ -138,7 +153,7 @@ contract TargetRegistryTest is Test {
     }
     
     /**
-     * @notice TEST 6: Registry pause functionality
+     * @notice Test: Registry pause prevents scheduling operations
      */
     function test_RegistryPause() public {
         vm.startPrank(owner);
@@ -164,7 +179,7 @@ contract TargetRegistryTest is Test {
     }
     
     /**
-     * @notice TEST 7: Only owner can pause registry
+     * @notice Test: Only owner can pause and unpause registry
      */
     function test_OnlyOwnerCanPauseRegistry() public {
         // Non-owner tries to pause
@@ -187,7 +202,7 @@ contract TargetRegistryTest is Test {
     }
     
     /**
-     * @notice TEST 9: ERC20 transfer authorization with mock Safe wallet
+     * @notice Test: ERC20 transfer authorization checks with mock Safe wallet
      */
     function test_ERC20TransferAuthorization() public {
         address usdcToken = makeAddr("usdcToken");
@@ -248,7 +263,7 @@ contract TargetRegistryTest is Test {
     }
     
     /**
-     * @notice Test transfers to allowed recipients
+     * @notice Test: ERC20 transfers to explicitly allowed recipients
      */
     function test_ERC20TransferToAllowedRecipient() public {
         address usdcToken = makeAddr("usdcToken");
@@ -297,7 +312,7 @@ contract TargetRegistryTest is Test {
     }
     
     /**
-     * @notice Test adding and removing allowed ERC20 token recipients
+     * @notice Test: Add and remove allowed ERC20 token recipients
      */
     function test_AllowedERC20TokenRecipientManagement() public {
         address usdcToken = makeAddr("usdcToken");
@@ -335,8 +350,8 @@ contract TargetRegistryTest is Test {
     }
     
     /**
-     * @notice TEST: Can re-schedule after execution (bug fix verification)
-     * @dev Verifies that the fixed salt allows re-scheduling the same pair
+     * @notice Test: Can re-schedule same target+selector after execution
+     * @dev Verifies that unique salt allows re-scheduling the same pair
      */
     function test_CanRescheduleAfterExecution() public {
         address[] memory targets = new address[](1);
@@ -370,7 +385,7 @@ contract TargetRegistryTest is Test {
     }
     
     /**
-     * @notice TEST: Cannot schedule duplicate operation before execution
+     * @notice Test: Cannot schedule duplicate operation before execution
      */
     function test_CannotScheduleDuplicateOperation() public {
         address[] memory targets = new address[](1);
@@ -386,5 +401,134 @@ contract TargetRegistryTest is Test {
         vm.prank(owner);
         vm.expectRevert(TargetRegistry.PendingOperationExists.selector);
         registry.scheduleAdd(targets, selectors);
+    }
+    
+    /**
+     * @notice Test: Cannot schedule with empty batch
+     */
+    function test_CannotScheduleEmptyBatch() public {
+        address[] memory emptyTargets = new address[](0);
+        bytes4[] memory emptySelectors = new bytes4[](0);
+        
+        vm.prank(owner);
+        vm.expectRevert(TargetRegistry.EmptyBatch.selector);
+        registry.scheduleAdd(emptyTargets, emptySelectors);
+        
+        vm.prank(owner);
+        vm.expectRevert(TargetRegistry.EmptyBatch.selector);
+        registry.scheduleRemove(emptyTargets, emptySelectors);
+    }
+    
+    /**
+     * @notice Test: Cannot schedule with mismatched array lengths
+     */
+    function test_CannotScheduleWithLengthMismatch() public {
+        address[] memory targets = new address[](2);
+        targets[0] = mockTarget;
+        targets[1] = makeAddr("target2");
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = SWAP_SELECTOR;
+        
+        vm.prank(owner);
+        vm.expectRevert(TargetRegistry.LengthMismatch.selector);
+        registry.scheduleAdd(targets, selectors);
+        
+        vm.prank(owner);
+        vm.expectRevert(TargetRegistry.LengthMismatch.selector);
+        registry.scheduleRemove(targets, selectors);
+    }
+    
+    /**
+     * @notice Test: Cannot schedule with zero address target
+     */
+    function test_CannotScheduleZeroAddressTarget() public {
+        address[] memory targets = new address[](1);
+        targets[0] = address(0);
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = SWAP_SELECTOR;
+        
+        vm.prank(owner);
+        vm.expectRevert(TargetRegistry.InvalidTarget.selector);
+        registry.scheduleAdd(targets, selectors);
+        
+        vm.prank(owner);
+        vm.expectRevert(TargetRegistry.InvalidTarget.selector);
+        registry.scheduleRemove(targets, selectors);
+    }
+    
+    /**
+     * @notice Test: Cannot schedule with zero selector
+     */
+    function test_CannotScheduleZeroSelector() public {
+        address[] memory targets = new address[](1);
+        targets[0] = mockTarget;
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = bytes4(0);
+        
+        vm.prank(owner);
+        vm.expectRevert(TargetRegistry.InvalidSelector.selector);
+        registry.scheduleAdd(targets, selectors);
+        
+        vm.prank(owner);
+        vm.expectRevert(TargetRegistry.InvalidSelector.selector);
+        registry.scheduleRemove(targets, selectors);
+    }
+    
+    /**
+     * @notice Test: Cannot add ERC20 recipient with zero token address
+     */
+    function test_CannotAddERC20RecipientWithZeroToken() public {
+        address[] memory recipients = new address[](1);
+        recipients[0] = makeAddr("recipient");
+        
+        vm.prank(owner);
+        vm.expectRevert(TargetRegistry.InvalidERC20Token.selector);
+        registry.addAllowedERC20TokenRecipient(address(0), recipients);
+    }
+    
+    /**
+     * @notice Test: Cannot add ERC20 recipient with zero recipient address
+     */
+    function test_CannotAddERC20RecipientWithZeroRecipient() public {
+        address token = makeAddr("token");
+        address[] memory recipients = new address[](1);
+        recipients[0] = address(0);
+        
+        vm.prank(owner);
+        vm.expectRevert(TargetRegistry.InvalidRecipient.selector);
+        registry.addAllowedERC20TokenRecipient(token, recipients);
+    }
+    
+    /**
+     * @notice Test: Cannot execute with empty batch
+     */
+    function test_CannotExecuteEmptyBatch() public {
+        address[] memory emptyTargets = new address[](0);
+        bytes4[] memory emptySelectors = new bytes4[](0);
+        
+        vm.expectRevert(TargetRegistry.EmptyBatch.selector);
+        registry.executeOperation(emptyTargets, emptySelectors);
+        
+        vm.prank(owner);
+        vm.expectRevert(TargetRegistry.EmptyBatch.selector);
+        registry.cancelOperation(emptyTargets, emptySelectors);
+    }
+    
+    /**
+     * @notice Test: Cannot execute with mismatched array lengths
+     */
+    function test_CannotExecuteWithLengthMismatch() public {
+        address[] memory targets = new address[](2);
+        targets[0] = mockTarget;
+        targets[1] = makeAddr("target2");
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = SWAP_SELECTOR;
+        
+        vm.expectRevert(TargetRegistry.LengthMismatch.selector);
+        registry.executeOperation(targets, selectors);
+        
+        vm.prank(owner);
+        vm.expectRevert(TargetRegistry.LengthMismatch.selector);
+        registry.cancelOperation(targets, selectors);
     }
 }

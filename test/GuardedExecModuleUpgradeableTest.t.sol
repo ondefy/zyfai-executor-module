@@ -188,7 +188,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
 
     /**
-     * @notice TEST 1: Verify msg.sender is the smart account with registry
+     * @notice Test: Verify msg.sender is the smart account when executing via module
      */
     function test_MsgSenderIsSmartAccount() public {
         // Prepare single call to Uniswap
@@ -224,7 +224,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 2: Batch multiple DeFi calls
+     * @notice Test: Execute batch of multiple DeFi protocol calls
      */
     function test_BatchMultipleDeFiCalls() public {
         // Prepare batch: Uniswap swap, Aave swap, Curve swap
@@ -270,7 +270,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 3: Module configuration is correct
+     * @notice Test: Module configuration (registry, version, name) is correct
      */
     function test_ModuleConfiguration() public {
         // Check registry is set correctly
@@ -288,7 +288,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 4: Module pause stops compromised session key
+     * @notice Test: Module pause stops execution (emergency stop for compromised session key)
      */
     function test_ModulePauseStopsSessionKey() public {
         // Check initial state
@@ -329,7 +329,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 5: Only owner can pause module
+     * @notice Test: Only owner can pause and unpause module
      */
     function test_OnlyOwnerCanPauseModule() public {
         address attacker = makeAddr("attacker");
@@ -354,7 +354,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 6: Registry update functionality
+     * @notice Test: Owner can update registry address (for migration)
      */
     function test_UpdateRegistry() public {
         // Deploy new registry
@@ -404,7 +404,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 7: Only owner can update registry
+     * @notice Test: Only owner can update registry address
      */
     function test_OnlyOwnerCanUpdateRegistry() public {
         address attacker = makeAddr("attacker");
@@ -423,7 +423,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 8: ERC20 USDC transfer restrictions
+     * @notice Test: ERC20 USDC transfer restrictions (authorized recipients only)
      */
     function test_ERC20USDCTransferRestrictions() public {
         // Mint some USDC to smart account
@@ -488,7 +488,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 9: WETH restricted/unrestricted state management
+     * @notice Test: WETH transfer restriction state management (add/remove allowed recipients)
      */
     function test_WETHRestrictionStateManagement() public {
         address randomAddress = makeAddr("randomAddress");
@@ -570,7 +570,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 10: Direct ERC20 transfer authorization test with mock Safe
+     * @notice Test: Direct ERC20 transfer authorization checks with mock Safe wallet
      */
     function test_DirectERC20TransferAuthorizationWithMockSafe() public {
         // Test the registry's isERC20TransferAuthorized function directly
@@ -595,7 +595,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 11: Module initializes only once
+     * @notice Test: Module can only be initialized once
      */
     function test_ModuleInitializesOnlyOnce() public {
         // Try to initialize again (should fail)
@@ -604,7 +604,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 12: Cannot update registry to zero address
+     * @notice Test: Cannot update registry to zero address
      */
     function test_CannotUpdateRegistryToZeroAddress() public {
         vm.prank(moduleOwner);
@@ -613,7 +613,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 13: Upgrade module implementation while keeping same address
+     * @notice Test: Upgrade module implementation while keeping same proxy address
      */
     function test_UpgradeModuleKeepsSameAddress() public {
         address proxyAddr = address(proxy);
@@ -658,7 +658,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 14: Only owner can upgrade
+     * @notice Test: Only owner can upgrade module implementation
      */
     function test_OnlyOwnerCanUpgrade() public {
         address attacker = makeAddr("attacker");
@@ -685,7 +685,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 15: Storage layout compatibility after upgrade
+     * @notice Test: Storage layout compatibility after upgrade (state persistence)
      */
     function test_StorageLayoutCompatibility() public {
         // Store some data before upgrade
@@ -728,8 +728,8 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 16: Unsupported pool should revert
-     * @dev Tests that calling an unsupported pool fails the whitelist check
+     * @notice Test: Unsupported pool should revert (whitelist check)
+     * @dev Verifies that calling non-whitelisted pool fails whitelist validation
      */
     function test_UnsupportedPoolShouldRevert() public {
         // Deploy a new unsupported pool
@@ -759,7 +759,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 17: Anyone can execute after OpenZeppelin timelock
+     * @notice Test: Anyone can execute scheduled operation after timelock expires
      */
     function test_PermissionlessExecution() public {
         MockDeFiPool newPool = new MockDeFiPool();
@@ -786,7 +786,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 18: Registry pause stops malicious scheduling
+     * @notice Test: Registry pause stops malicious scheduling (emergency stop)
      */
     function test_RegistryPauseStopsMaliciousScheduling() public {
         MockDeFiPool maliciousPool = new MockDeFiPool();
@@ -798,7 +798,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         scheduleTargets5[0] = address(maliciousPool);
         bytes4[] memory scheduleSelectors5 = new bytes4[](1);
         scheduleSelectors5[0] = SWAP_SELECTOR;
-        bytes32[] memory opIds = registry.scheduleAdd(scheduleTargets5, scheduleSelectors5);
+        registry.scheduleAdd(scheduleTargets5, scheduleSelectors5);
         
         // Cancel it for cleanup
         vm.warp(block.timestamp - 1); // Reset time
@@ -821,7 +821,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
-     * @notice TEST 20: ERC20 transfer restrictions with mock Safe wallet
+     * @notice Test: ERC20 transfer restrictions with mock Safe wallet (authorized recipients)
      */
     function test_ERC20TransferRestrictionsWithMockSafe() public {
         // Mint some USDC to smart account
@@ -893,5 +893,104 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
                 values
             )
         });
+    }
+    
+    /**
+     * @notice Test: Cannot execute with empty batch
+     */
+    function test_CannotExecuteEmptyBatch() public {
+        address[] memory emptyTargets = new address[](0);
+        bytes[] memory emptyCalldatas = new bytes[](0);
+        uint256[] memory emptyValues = new uint256[](0);
+        
+        vm.prank(smartAccount);
+        vm.expectRevert(GuardedExecModuleUpgradeable.EmptyBatch.selector);
+        guardedModule.executeGuardedBatch(emptyTargets, emptyCalldatas, emptyValues);
+    }
+    
+    /**
+     * @notice Test: Cannot execute with mismatched array lengths (targets vs calldatas)
+     */
+    function test_CannotExecuteWithMismatchedTargetsCalldatas() public {
+        address[] memory targets = new address[](2);
+        targets[0] = address(uniswapPool);
+        targets[1] = address(aavePool);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(SWAP_SELECTOR, 1000 ether, 900 ether);
+        uint256[] memory values = new uint256[](2);
+        values[0] = 0;
+        values[1] = 0;
+        
+        vm.prank(smartAccount);
+        vm.expectRevert(GuardedExecModuleUpgradeable.LengthMismatch.selector);
+        guardedModule.executeGuardedBatch(targets, calldatas, values);
+    }
+    
+    /**
+     * @notice Test: Cannot execute with mismatched array lengths (targets vs values)
+     */
+    function test_CannotExecuteWithMismatchedTargetsValues() public {
+        address[] memory targets = new address[](1);
+        targets[0] = address(uniswapPool);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(SWAP_SELECTOR, 1000 ether, 900 ether);
+        uint256[] memory values = new uint256[](2);
+        values[0] = 0;
+        values[1] = 0;
+        
+        vm.prank(smartAccount);
+        vm.expectRevert(GuardedExecModuleUpgradeable.LengthMismatch.selector);
+        guardedModule.executeGuardedBatch(targets, calldatas, values);
+    }
+    
+    /**
+     * @notice Test: Cannot execute with invalid calldata (too short for selector)
+     */
+    function test_CannotExecuteWithInvalidCalldata() public {
+        address[] memory targets = new address[](1);
+        targets[0] = address(uniswapPool);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = hex"1234"; // Only 2 bytes, too short for selector (needs 4 bytes)
+        uint256[] memory values = new uint256[](1);
+        values[0] = 0;
+        
+        vm.prank(smartAccount);
+        vm.expectRevert(GuardedExecModuleUpgradeable.InvalidCalldata.selector);
+        guardedModule.executeGuardedBatch(targets, calldatas, values);
+    }
+    
+    /**
+     * @notice Test: Cannot execute ERC20 transfer with invalid calldata length
+     */
+    function test_CannotExecuteERC20TransferWithInvalidCalldataLength() public {
+        // Transfer requires exactly 68 bytes (4 selector + 32 to + 32 amount)
+        address[] memory targets = new address[](1);
+        targets[0] = address(usdcToken);
+        bytes[] memory calldatas = new bytes[](1);
+        // Create invalid transfer calldata (wrong length - only 36 bytes: 4 selector + 32 to, missing amount)
+        calldatas[0] = abi.encodeWithSelector(TRANSFER_SELECTOR, smartAccount);
+        uint256[] memory values = new uint256[](1);
+        values[0] = 0;
+        
+        vm.prank(smartAccount);
+        vm.expectRevert(GuardedExecModuleUpgradeable.InvalidCalldata.selector);
+        guardedModule.executeGuardedBatch(targets, calldatas, values);
+    }
+    
+    /**
+     * @notice Test: Cannot initialize with zero registry address
+     */
+    function test_CannotInitializeWithZeroRegistry() public {
+        GuardedExecModuleUpgradeable newImpl = new GuardedExecModuleUpgradeable();
+        
+        vm.expectRevert(GuardedExecModuleUpgradeable.InvalidRegistry.selector);
+        new ERC1967Proxy(
+            address(newImpl),
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.initialize.selector,
+                address(0), // Zero registry address
+                moduleOwner
+            )
+        );
     }
 }
