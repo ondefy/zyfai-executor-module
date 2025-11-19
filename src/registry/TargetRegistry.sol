@@ -2,7 +2,7 @@
 pragma solidity ^0.8.23;
 
 import "@openzeppelin/contracts/governance/TimelockController.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import { ISafeWallet } from "../interfaces/ISafeWallet.sol";
 
@@ -22,11 +22,12 @@ import { ISafeWallet } from "../interfaces/ISafeWallet.sol";
  *      - Only owner can schedule operations
  *      - Batch operations supported for gas efficiency
  *      - ERC20 transfer recipient authorization for additional security
+ *      - Two-step ownership transfer for enhanced security
  *
  *      The timelock delay is set to 1 day to provide adequate protection while maintaining
  * reasonable responsiveness.
  */
-contract TargetRegistry is Ownable, Pausable {
+contract TargetRegistry is Ownable2Step, Pausable {
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
     //////////////////////////////////////////////////////////////*/
@@ -47,6 +48,22 @@ contract TargetRegistry is Ownable, Pausable {
      *      router is allowed to be called by session keys via the executor module.
      */
     mapping(address => mapping(bytes4 => bool)) public whitelist;
+
+    /**
+     * @notice Counter for number of whitelisted selectors per target address
+     * @dev Tracks how many selectors are whitelisted for each target. Used to efficiently
+     *      determine if a target is whitelisted (counter > 0). Updated automatically when
+     *      selectors are added/removed.
+     */
+    mapping(address => uint256) public whitelistedSelectorCount;
+
+    /**
+     * @notice Mapping to track which addresses are whitelisted targets
+     * @dev Set to true when a target has at least one whitelisted selector (counter > 0).
+     *      Used for efficient checking if an address is a whitelisted target (for approve validation).
+     *      Updated automatically when selectors are added/removed.
+     */
+    mapping(address => bool) public whitelistedTargets;
 
     /**
      * @notice Operation metadata structure for tracking scheduled whitelist changes
@@ -71,6 +88,13 @@ contract TargetRegistry is Ownable, Pausable {
      * wallet owners, or authorized recipients.
      */
     mapping(address => mapping(address => bool)) public allowedERC20TokenRecipients;
+
+    /**
+     * @notice Nonce counter for salt generation to ensure uniqueness and unpredictability
+     * @dev Incremented on each scheduled operation to prevent predictable salt generation.
+     *      Prevents front-running attacks by making operation IDs unpredictable.
+     */
+    uint256 private nonce;
 
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
@@ -321,11 +345,14 @@ contract TargetRegistry is Ownable, Pausable {
     /**
      * @notice Execute scheduled operation(s) after timelock delay expires (batch operation)
      * @dev Permissionless function. Finalizes scheduled whitelist changes after 1 day delay. Anyone
-     * can execute.
+     * can execute. Reverts if contract is paused (emergency stop).
      * @param targets Array of target addresses
      * @param selectors Array of function selectors
      */
-    function executeOperation(address[] calldata targets, bytes4[] calldata selectors) external {
+    function executeOperation(address[] calldata targets, bytes4[] calldata selectors)
+        external
+        whenNotPaused
+    {
         uint256 length = targets.length;
         if (length == 0) revert EmptyBatch();
         if (length != selectors.length) revert LengthMismatch();
@@ -370,14 +397,19 @@ contract TargetRegistry is Ownable, Pausable {
 
     /**
      * @notice Generate unique salt for operation scheduling
-     * @dev Creates unique salt using target, selector, timestamp, and block randomness.
+     * @dev Creates unique, unpredictable salt using target, selector, nonce, timestamp, and block randomness.
+     *      Nonce ensures uniqueness and unpredictability, preventing front-running attacks.
      *      Enables re-scheduling same (target, selector) by generating unique operation IDs.
      * @param target The target contract address
      * @param selector The function selector
      * @return Unique salt for the timelock operation
      */
-    function _newSalt(address target, bytes4 selector) internal view returns (bytes32) {
-        return keccak256(abi.encodePacked(target, selector, block.timestamp, block.prevrandao));
+    function _newSalt(address target, bytes4 selector) internal returns (bytes32) {
+        bytes32 salt = keccak256(abi.encodePacked(target, selector, nonce, block.timestamp, block.prevrandao));
+        unchecked {
+            ++nonce;
+        }
+        return salt;
     }
 
     /**
@@ -546,26 +578,48 @@ contract TargetRegistry is Ownable, Pausable {
     /**
      * @notice Add to whitelist (called by TimelockController after delay)
      * @dev Only callable by TimelockController. This is the callback function executed after
-     * timelock expires.
+     * timelock expires. Updates whitelistedSelectorCount and whitelistedTargets mapping.
      * @param target The contract address to add to whitelist
      * @param selector The function selector to add to whitelist
      */
     function _addToWhitelist(address target, bytes4 selector) external {
         require(msg.sender == address(timelock), "Only timelock");
-        whitelist[target][selector] = true;
+        
+        // Only increment if this selector wasn't already whitelisted
+        if (!whitelist[target][selector]) {
+            whitelist[target][selector] = true;
+            unchecked {
+                whitelistedSelectorCount[target]++;
+            }
+            whitelistedTargets[target] = true; // Mark target as whitelisted
+        }
+        
         emit TargetSelectorAdded(target, selector);
     }
 
     /**
      * @notice Remove from whitelist (called by TimelockController after delay)
      * @dev Only callable by TimelockController. This is the callback function executed after
-     * timelock expires.
+     * timelock expires. Updates whitelistedSelectorCount and whitelistedTargets mapping.
      * @param target The contract address to remove from whitelist
      * @param selector The function selector to remove from whitelist
      */
     function _removeFromWhitelist(address target, bytes4 selector) external {
         require(msg.sender == address(timelock), "Only timelock");
-        whitelist[target][selector] = false;
+        
+        // Only decrement if this selector was whitelisted
+        if (whitelist[target][selector]) {
+            whitelist[target][selector] = false;
+            unchecked {
+                whitelistedSelectorCount[target]--;
+            }
+            
+            // If counter reaches zero, mark target as no longer whitelisted
+            if (whitelistedSelectorCount[target] == 0) {
+                whitelistedTargets[target] = false;
+            }
+        }
+        
         emit TargetSelectorRemoved(target, selector);
     }
 
@@ -583,6 +637,17 @@ contract TargetRegistry is Ownable, Pausable {
      */
     function isWhitelisted(address target, bytes4 selector) external view returns (bool) {
         return whitelist[target][selector];
+    }
+
+    /**
+     * @notice Check if a target address has any whitelisted selector
+     * @dev Used to verify if an address is a whitelisted target contract (for approve validation).
+     *      Returns true if the target has at least one whitelisted selector, indicating it's a trusted contract.
+     * @param target The contract address to check
+     * @return True if the target is whitelisted (has at least one whitelisted selector)
+     */
+    function isWhitelistedTarget(address target) external view returns (bool) {
+        return whitelistedTargets[target];
     }
 
     /**

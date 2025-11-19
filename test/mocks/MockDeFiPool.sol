@@ -55,10 +55,11 @@ contract MockDeFiPool {
      * @notice Mock swap function
      * @dev Records msg.sender to verify it's the smart account.
      *      Second parameter is unused but kept for interface compatibility.
+     *      Function is payable to accept native ETH for testing purposes.
      * @param amountIn The amount to swap in
      * @return amountOut The amount swapped out
      */
-    function swap(uint256 amountIn, uint256) external returns (uint256 amountOut) {
+    function swap(uint256 amountIn, uint256) external payable returns (uint256 amountOut) {
         lastCaller = msg.sender;
         callCount++;
 

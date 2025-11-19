@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -16,11 +16,12 @@ import { TargetRegistry } from "../registry/TargetRegistry.sol";
  *         while maintaining smart account context. Uses UUPS upgradeable pattern.
  * @dev Session keys can execute batch operations on whitelisted target+selector combinations.
  *      All executions maintain smart account context (msg.sender = smart account).
- *      Security: Whitelist validation, ERC20 transfer restrictions, pausable, upgradeable.
+ *      Security: Whitelist validation, ERC20 transfer restrictions, pausable, upgradeable,
+ *      two-step ownership transfer for enhanced security.
  */
 contract GuardedExecModuleUpgradeable is
     ERC7579ExecutorBase,
-    OwnableUpgradeable,
+    Ownable2StepUpgradeable,
     PausableUpgradeable,
     UUPSUpgradeable
 {
@@ -35,15 +36,20 @@ contract GuardedExecModuleUpgradeable is
     bytes4 private constant TRANSFER_SELECTOR = IERC20.transfer.selector;
 
     /**
+     * @notice ERC20 approve function selector for gas optimization
+     * @dev Used to identify ERC20 approve calls for additional authorization checks
+     */
+    bytes4 private constant APPROVE_SELECTOR = IERC20.approve.selector;
+
+    /**
      * @notice Minimum calldata length required to extract function selector
      * @dev Function selector is 4 bytes, so calldata must be at least 4 bytes
      */
     uint256 private constant MIN_SELECTOR_LENGTH = 4;
 
     /**
-     * @notice Minimum calldata length for ERC20 transfer validation
-     * @dev Standard ERC20 transfer: 4 bytes (selector) + 32 bytes (to) + 32 bytes (amount) = 68
-     * bytes
+     * @notice Minimum calldata length for ERC20 transfer/approve validation
+     * @dev Standard ERC20 transfer/approve: 4 bytes (selector) + 32 bytes (address) + 32 bytes (amount) = 68 bytes
      */
     uint256 private constant MIN_TRANSFER_LENGTH = 68;
 
@@ -112,8 +118,18 @@ contract GuardedExecModuleUpgradeable is
     /// @param to The unauthorized recipient address
     error UnauthorizedERC20Transfer(address token, address to);
 
+    /// @notice Thrown when ERC20 approve is attempted to unauthorized spender
+    /// @param token The ERC20 token address
+    /// @param spender The unauthorized spender address
+    error UnauthorizedERC20Approve(address token, address spender);
+
     /// @notice Thrown when calldata is invalid (too short or malformed)
     error InvalidCalldata();
+
+    /// @notice Thrown when msg.value is insufficient to cover the total values array sum
+    /// @param msgValue The ETH amount sent with the transaction
+    /// @param requiredValue The total ETH amount required (sum of values array)
+    error InsufficientEthValue(uint256 msgValue, uint256 requiredValue);
 
     /*//////////////////////////////////////////////////////////////
                              CONSTRUCTOR
@@ -135,7 +151,7 @@ contract GuardedExecModuleUpgradeable is
 
     /**
      * @notice Initialize the module with registry and owner
-     * @dev Can only be called once by the proxy. Initializes Ownable, Pausable, and UUPS
+     * @dev Can only be called once by the proxy. Initializes Ownable2Step, Pausable, and UUPS
      * upgradeable.
      * @param _registry Address of the TargetRegistry contract
      * @param _owner Address that can pause/unpause and upgrade (should be multisig for production)
@@ -143,6 +159,7 @@ contract GuardedExecModuleUpgradeable is
     function initialize(address _registry, address _owner) external initializer {
         if (_registry == address(0)) revert InvalidRegistry();
 
+        __Ownable2Step_init();
         __Ownable_init(_owner);
         __Pausable_init();
         __UUPSUpgradeable_init();
@@ -232,6 +249,7 @@ contract GuardedExecModuleUpgradeable is
      * @dev Permissionless function. All target+selector combinations must be whitelisted.
      *      Executions maintain smart account context (msg.sender = smart account).
      *      All validations occur before execution (checks-effects-interactions pattern).
+     *      Function is payable to accept native ETH that will be forwarded to target contracts.
      * @param targets Array of target contract addresses
      * @param calldatas Array of encoded function calls
      * @param values Array of native ETH values to send with each call
@@ -242,12 +260,27 @@ contract GuardedExecModuleUpgradeable is
         uint256[] calldata values
     )
         external
+        payable
         whenNotPaused
     {
         uint256 length = targets.length;
         if (length == 0) revert EmptyBatch();
         if (length != calldatas.length) revert LengthMismatch();
         if (length != values.length) revert LengthMismatch();
+
+        // Calculate total ETH value required for all executions
+        uint256 totalValue;
+        for (uint256 i = 0; i < length;) {
+            totalValue += values[i];
+            unchecked {
+                ++i;
+            }
+        }
+
+        // Validate that msg.value covers the total required ETH
+        if (msg.value < totalValue) {
+            revert InsufficientEthValue(msg.value, totalValue);
+        }
 
         Execution[] memory executions = new Execution[](length);
         bytes4[] memory selectors = new bytes4[](length);
@@ -273,6 +306,11 @@ contract GuardedExecModuleUpgradeable is
             // Security check 2: Validate ERC20 transfer authorization if this is a transfer
             if (selector == TRANSFER_SELECTOR) {
                 _validateERC20Transfer(currentTarget, currentCalldata, reg);
+            }
+
+            // Security check 3: Validate ERC20 approve authorization if this is an approve
+            if (selector == APPROVE_SELECTOR) {
+                _validateERC20Approve(currentTarget, currentCalldata, reg);
             }
 
             // Build execution after all validations pass
@@ -340,6 +378,35 @@ contract GuardedExecModuleUpgradeable is
         // Check if recipient is authorized (wallet itself, owner, or explicitly authorized)
         if (!reg.isERC20TransferAuthorized(token, to, msg.sender)) {
             revert UnauthorizedERC20Transfer(token, to);
+        }
+    }
+
+    /**
+     * @notice Validate ERC20 approve authorization
+     * @dev Validates calldata format and checks if approve spender is whitelisted.
+     *      Spender must be a whitelisted target address in the registry (trusted DeFi contract).
+     * @param token The ERC20 token address
+     * @param callData The encoded approve(address spender, uint256 amount) call data
+     * @param reg The cached registry instance for authorization check
+     */
+    function _validateERC20Approve(
+        address token,
+        bytes calldata callData,
+        TargetRegistry reg
+    )
+        internal
+        view
+    {
+        // Standard ERC20 approve must be exactly 68 bytes: 4 (selector) + 32 (spender) + 32 (amount)
+        if (callData.length != MIN_TRANSFER_LENGTH) revert InvalidCalldata();
+
+        // Extract spender address from calldata (bytes 4-35)
+        address spender = abi.decode(callData[4:36], (address));
+
+        // Check if spender is whitelisted as a target address (trusted contract)
+        // Spender must be in the whitelistedTargets mapping (has at least one selector whitelisted)
+        if (!reg.isWhitelistedTarget(spender)) {
+            revert UnauthorizedERC20Approve(token, spender);
         }
     }
 }

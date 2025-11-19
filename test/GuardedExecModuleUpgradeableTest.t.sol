@@ -62,6 +62,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     // Common selectors
     bytes4 internal constant SWAP_SELECTOR = MockDeFiPool.swap.selector;
     bytes4 internal constant TRANSFER_SELECTOR = IERC20.transfer.selector;
+    bytes4 internal constant APPROVE_SELECTOR = IERC20.approve.selector;
 
     function setUp() public {
         init();
@@ -94,19 +95,23 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         vm.startPrank(registryOwner);
 
         // Schedule adds for DeFi pools and ERC20 tokens (batch operation)
-        address[] memory scheduleTargets = new address[](5);
+        address[] memory scheduleTargets = new address[](7);
         scheduleTargets[0] = address(uniswapPool);
         scheduleTargets[1] = address(aavePool);
         scheduleTargets[2] = address(curvePool);
         scheduleTargets[3] = address(usdcToken);
         scheduleTargets[4] = address(wethToken);
+        scheduleTargets[5] = address(usdcToken);
+        scheduleTargets[6] = address(wethToken);
 
-        bytes4[] memory scheduleSelectors = new bytes4[](5);
+        bytes4[] memory scheduleSelectors = new bytes4[](7);
         scheduleSelectors[0] = SWAP_SELECTOR;
         scheduleSelectors[1] = SWAP_SELECTOR;
         scheduleSelectors[2] = SWAP_SELECTOR;
         scheduleSelectors[3] = TRANSFER_SELECTOR;
         scheduleSelectors[4] = TRANSFER_SELECTOR;
+        scheduleSelectors[5] = APPROVE_SELECTOR;
+        scheduleSelectors[6] = APPROVE_SELECTOR;
 
         registry.scheduleAdd(scheduleTargets, scheduleSelectors);
 
@@ -160,19 +165,23 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         vm.label(address(registry), "TestTargetRegistryWithMockSafe");
 
         // Schedule and execute whitelist operations
-        address[] memory scheduleTargets2 = new address[](5);
+        address[] memory scheduleTargets2 = new address[](7);
         scheduleTargets2[0] = address(uniswapPool);
         scheduleTargets2[1] = address(aavePool);
         scheduleTargets2[2] = address(curvePool);
         scheduleTargets2[3] = address(usdcToken);
         scheduleTargets2[4] = address(wethToken);
+        scheduleTargets2[5] = address(usdcToken);
+        scheduleTargets2[6] = address(wethToken);
 
-        bytes4[] memory scheduleSelectors2 = new bytes4[](5);
+        bytes4[] memory scheduleSelectors2 = new bytes4[](7);
         scheduleSelectors2[0] = SWAP_SELECTOR;
         scheduleSelectors2[1] = SWAP_SELECTOR;
         scheduleSelectors2[2] = SWAP_SELECTOR;
         scheduleSelectors2[3] = TRANSFER_SELECTOR;
         scheduleSelectors2[4] = TRANSFER_SELECTOR;
+        scheduleSelectors2[5] = APPROVE_SELECTOR;
+        scheduleSelectors2[6] = APPROVE_SELECTOR;
 
         registry.scheduleAdd(scheduleTargets2, scheduleSelectors2);
 
@@ -438,6 +447,54 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         vm.expectRevert(); // Should revert with OwnableUnauthorizedAccount
         guardedModule.updateRegistry(address(maliciousRegistry));
         vm.stopPrank();
+    }
+
+    /**
+     * @notice Test: Two-step ownership transfer works correctly
+     * @dev Verifies that ownership transfer requires two steps: transferOwnership() then acceptOwnership()
+     *      This prevents accidental or malicious immediate ownership transfers.
+     */
+    function test_TwoStepOwnershipTransfer() public {
+        address newOwner = makeAddr("newOwner");
+
+        // Step 1: Current owner initiates transfer
+        vm.prank(moduleOwner);
+        guardedModule.transferOwnership(newOwner);
+
+        // Verify pending owner is set
+        assertEq(guardedModule.pendingOwner(), newOwner, "Pending owner should be set");
+
+        // Verify current owner hasn't changed yet
+        assertEq(guardedModule.owner(), moduleOwner, "Current owner should not have changed yet");
+
+        // Non-pending owner cannot accept
+        vm.prank(makeAddr("random"));
+        vm.expectRevert();
+        guardedModule.acceptOwnership();
+
+        // Step 2: New owner accepts ownership
+        vm.prank(newOwner);
+        guardedModule.acceptOwnership();
+
+        // Verify ownership has transferred
+        assertEq(guardedModule.owner(), newOwner, "New owner should be set");
+        assertEq(guardedModule.pendingOwner(), address(0), "Pending owner should be cleared");
+        assertNotEq(guardedModule.owner(), moduleOwner, "Old owner should no longer be owner");
+
+        // New owner can now perform owner functions
+        vm.prank(newOwner);
+        guardedModule.pause();
+        assertTrue(guardedModule.paused(), "New owner should be able to pause");
+
+        vm.prank(newOwner);
+        guardedModule.unpause();
+        assertFalse(guardedModule.paused(), "New owner should be able to unpause");
+
+        // New owner can update registry
+        TargetRegistry newRegistry = new TargetRegistry(makeAddr("registryOwner"));
+        vm.prank(newOwner);
+        guardedModule.updateRegistry(address(newRegistry));
+        assertEq(address(guardedModule.registry()), address(newRegistry), "New owner should be able to update registry");
     }
 
     /**
@@ -958,6 +1015,194 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         vm.prank(smartAccount);
         vm.expectRevert(GuardedExecModuleUpgradeable.InvalidCalldata.selector);
         guardedModule.executeGuardedBatch(targets, calldatas, values);
+    }
+
+    /**
+     * @notice Test: ERC20 approve with whitelisted target spender should succeed
+     * @dev Verifies that approve() calls work when spender is a whitelisted target (like uniswapPool)
+     */
+    function test_ERC20ApproveWithWhitelistedTargetSpender() public {
+        // Mint some USDC to smart account
+        usdcToken.mint(smartAccount, 1000 * 10 ** 6); // 1000 USDC
+
+        // uniswapPool is whitelisted (has SWAP_SELECTOR whitelisted), so it should be approved
+        address whitelistedSpender = address(uniswapPool);
+
+        address[] memory targets = new address[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
+
+        targets[0] = address(usdcToken);
+        calldatas[0] = abi.encodeWithSelector(APPROVE_SELECTOR, whitelistedSpender, 100 * 10 ** 6);
+        values[0] = 0;
+
+        // Approve should succeed with whitelisted target spender
+        instance.exec({
+            target: address(guardedModule),
+            value: 0,
+            callData: abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.executeGuardedBatch.selector, targets, calldatas, values
+            )
+        });
+
+        // Verify approval was successful
+        uint256 allowance = usdcToken.allowance(smartAccount, whitelistedSpender);
+        assertEq(allowance, 100 * 10 ** 6, "Allowance should be set");
+    }
+
+    /**
+     * @notice Test: ERC20 approve with unauthorized spender should revert
+     * @dev Verifies that approve() calls fail when spender is not whitelisted
+     */
+    function test_ERC20ApproveWithUnauthorizedSpender() public {
+        address unauthorizedSpender = makeAddr("unauthorizedSpender");
+
+        address[] memory targets = new address[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
+
+        targets[0] = address(usdcToken);
+        calldatas[0] = abi.encodeWithSelector(APPROVE_SELECTOR, unauthorizedSpender, 100 * 10 ** 6);
+        values[0] = 0;
+
+        // Approve should fail with unauthorized spender (not whitelisted)
+        instance.expect4337Revert(GuardedExecModuleUpgradeable.UnauthorizedERC20Approve.selector);
+        instance.exec({
+            target: address(guardedModule),
+            value: 0,
+            callData: abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.executeGuardedBatch.selector, targets, calldatas, values
+            )
+        });
+    }
+
+    /**
+     * @notice Test: ERC20 approve to smart account itself should fail if not whitelisted
+     * @dev Verifies that approve() calls check whitelist - even self-approval requires whitelisting
+     */
+    function test_ERC20ApproveToSmartAccountSelfFailsIfNotWhitelisted() public {
+        address[] memory targets = new address[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
+
+        targets[0] = address(usdcToken);
+        calldatas[0] = abi.encodeWithSelector(APPROVE_SELECTOR, smartAccount, 100 * 10 ** 6);
+        values[0] = 0;
+
+        // Approve to self should fail if smart account is not whitelisted
+        // (smart account is not a whitelisted target - it's just the wallet)
+        instance.expect4337Revert(GuardedExecModuleUpgradeable.UnauthorizedERC20Approve.selector);
+        instance.exec({
+            target: address(guardedModule),
+            value: 0,
+            callData: abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.executeGuardedBatch.selector, targets, calldatas, values
+            )
+        });
+    }
+
+    /**
+     * @notice Test: Execute with insufficient ETH value should revert
+     * @dev Verifies that executeGuardedBatch reverts when msg.value is less than sum of values array
+     */
+    function test_ExecuteWithInsufficientEthValue() public {
+        address[] memory targets = new address[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
+
+        targets[0] = address(uniswapPool);
+        calldatas[0] = abi.encodeWithSelector(SWAP_SELECTOR, 1000 ether, 900 ether);
+        values[0] = 1 ether; // Requires 1 ETH
+
+        // Try to execute with insufficient ETH (0 ETH)
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.InsufficientEthValue.selector,
+                0, // msg.value
+                1 ether // required value
+            )
+        );
+        guardedModule.executeGuardedBatch{value: 0}(targets, calldatas, values);
+    }
+
+    /**
+     * @notice Test: Execute with sufficient ETH value should succeed
+     * @dev Verifies that executeGuardedBatch works when msg.value equals sum of values array
+     */
+    function test_ExecuteWithSufficientEthValue() public {
+        // Fund smart account with ETH
+        vm.deal(smartAccount, 10 ether);
+
+        address[] memory targets = new address[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
+
+        targets[0] = address(uniswapPool);
+        calldatas[0] = abi.encodeWithSelector(SWAP_SELECTOR, 1000 ether, 900 ether);
+        values[0] = 1 ether; // Requires 1 ETH
+
+        // Execute with exact required ETH
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch{value: 1 ether}(targets, calldatas, values);
+    }
+
+    /**
+     * @notice Test: Execute with excess ETH value should succeed
+     * @dev Verifies that executeGuardedBatch works when msg.value is greater than sum of values array (overpayment allowed)
+     */
+    function test_ExecuteWithExcessEthValue() public {
+        // Fund smart account with ETH
+        vm.deal(smartAccount, 10 ether);
+
+        address[] memory targets = new address[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
+
+        targets[0] = address(uniswapPool);
+        calldatas[0] = abi.encodeWithSelector(SWAP_SELECTOR, 1000 ether, 900 ether);
+        values[0] = 1 ether; // Requires 1 ETH
+
+        // Execute with more ETH than required (overpayment allowed)
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch{value: 2 ether}(targets, calldatas, values);
+    }
+
+    /**
+     * @notice Test: Execute batch with multiple ETH values should validate total
+     * @dev Verifies that executeGuardedBatch validates msg.value against sum of all values in array
+     */
+    function test_ExecuteBatchWithMultipleEthValues() public {
+        // Fund smart account with ETH
+        vm.deal(smartAccount, 10 ether);
+
+        address[] memory targets = new address[](2);
+        bytes[] memory calldatas = new bytes[](2);
+        uint256[] memory values = new uint256[](2);
+
+        targets[0] = address(uniswapPool);
+        calldatas[0] = abi.encodeWithSelector(SWAP_SELECTOR, 1000 ether, 900 ether);
+        values[0] = 1 ether; // Requires 1 ETH
+
+        targets[1] = address(uniswapPool);
+        calldatas[1] = abi.encodeWithSelector(SWAP_SELECTOR, 2000 ether, 1800 ether);
+        values[1] = 2 ether; // Requires 2 ETH
+
+        // Total required: 3 ETH
+        // Try with insufficient ETH
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.InsufficientEthValue.selector,
+                2 ether, // msg.value
+                3 ether // required value (1 + 2)
+            )
+        );
+        guardedModule.executeGuardedBatch{value: 2 ether}(targets, calldatas, values);
+
+        // Try with exact required ETH
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch{value: 3 ether}(targets, calldatas, values);
     }
 
     /**
