@@ -268,19 +268,8 @@ contract GuardedExecModuleUpgradeable is
         if (length != calldatas.length) revert LengthMismatch();
         if (length != values.length) revert LengthMismatch();
 
-        // Calculate total ETH value required for all executions
-        uint256 totalValue;
-        for (uint256 i = 0; i < length;) {
-            totalValue += values[i];
-            unchecked {
-                ++i;
-            }
-        }
-
         // Validate that msg.value covers the total required ETH
-        if (msg.value < totalValue) {
-            revert InsufficientEthValue(msg.value, totalValue);
-        }
+        _validateEthValue(values, length);
 
         Execution[] memory executions = new Execution[](length);
         bytes4[] memory selectors = new bytes4[](length);
@@ -352,6 +341,27 @@ contract GuardedExecModuleUpgradeable is
      * @param newImplementation The address of the new implementation contract
      */
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner { }
+
+    /**
+     * @notice Validate that msg.value covers the total ETH value required for all executions
+     * @dev Calculates sum of values array and verifies msg.value >= totalValue.
+     *      Reverts with InsufficientEthValue if msg.value is less than required.
+     * @param values Array of native ETH values to send with each call
+     * @param length Number of operations in the batch
+     */
+    function _validateEthValue(uint256[] calldata values, uint256 length) internal view {
+        uint256 totalValue;
+        for (uint256 i = 0; i < length;) {
+            totalValue += values[i];
+            unchecked {
+                ++i;
+            }
+        }
+
+        if (msg.value < totalValue) {
+            revert InsufficientEthValue(msg.value, totalValue);
+        }
+    }
 
     /**
      * @notice Validate ERC20 transfer authorization
