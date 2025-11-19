@@ -1102,107 +1102,103 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
 
     /**
-     * @notice Test: Execute with insufficient ETH value should revert
-     * @dev Verifies that executeGuardedBatch reverts when msg.value is less than sum of values array
+     * @notice Test: Smart wallet executes transaction with ETH value using its own balance
+     * @dev Verifies that when Execution struct contains value > 0, the smart wallet uses its own
+     *      balance to forward ETH to target contracts, even though the module is not payable.
      */
-    function test_ExecuteWithInsufficientEthValue() public {
+    function test_SmartWalletExecutesWithEthValue() public {
+        // Fund smart account with ETH
+        vm.deal(smartAccount, 10 ether);
+
+        // Verify initial balance of target contract
+        address targetContract = address(uniswapPool);
+        uint256 initialBalance = targetContract.balance;
+        assertEq(initialBalance, 0, "Target contract should start with 0 ETH");
+
+        // Create execution with ETH value
         address[] memory targets = new address[](1);
         bytes[] memory calldatas = new bytes[](1);
         uint256[] memory values = new uint256[](1);
 
-        targets[0] = address(uniswapPool);
+        targets[0] = targetContract;
         calldatas[0] = abi.encodeWithSelector(SWAP_SELECTOR, 1000 ether, 900 ether);
-        values[0] = 1 ether; // Requires 1 ETH
+        values[0] = 1 ether; // Send 1 ETH with the call
 
-        // Try to execute with insufficient ETH (0 ETH)
-        vm.prank(smartAccount);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                GuardedExecModuleUpgradeable.InsufficientEthValue.selector,
-                0, // msg.value
-                1 ether // required value
+        // Execute via smart account (module is not payable, but smart account has ETH)
+        instance.exec({
+            target: address(guardedModule),
+            value: 0, // Module doesn't accept ETH
+            callData: abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.executeGuardedBatch.selector, targets, calldatas, values
             )
-        );
-        guardedModule.executeGuardedBatch{value: 0}(targets, calldatas, values);
+        });
+
+        // Verify ETH was sent to target contract from smart account's balance
+        uint256 finalBalance = targetContract.balance;
+        assertEq(finalBalance, 1 ether, "Target contract should have received 1 ETH");
+
+        // Verify smart account balance decreased (accounting for gas costs)
+        uint256 smartAccountBalance = smartAccount.balance;
+        assertGt(smartAccountBalance, 8 ether, "Smart account should have at least 8 ETH remaining");
+        assertLt(smartAccountBalance, 10 ether, "Smart account balance should be less than 10 ETH");
     }
 
     /**
-     * @notice Test: Execute with sufficient ETH value should succeed
-     * @dev Verifies that executeGuardedBatch works when msg.value equals sum of values array
+     * @notice Test: Smart wallet executes batch with multiple ETH values
+     * @dev Verifies that smart wallet can execute multiple operations with different ETH values
+     *      using its own balance.
      */
-    function test_ExecuteWithSufficientEthValue() public {
+    function test_SmartWalletExecutesBatchWithMultipleEthValues() public {
         // Fund smart account with ETH
         vm.deal(smartAccount, 10 ether);
 
-        address[] memory targets = new address[](1);
-        bytes[] memory calldatas = new bytes[](1);
-        uint256[] memory values = new uint256[](1);
+        // Create two target contracts to receive ETH
+        MockDeFiPool pool1 = new MockDeFiPool();
+        MockDeFiPool pool2 = new MockDeFiPool();
 
-        targets[0] = address(uniswapPool);
-        calldatas[0] = abi.encodeWithSelector(SWAP_SELECTOR, 1000 ether, 900 ether);
-        values[0] = 1 ether; // Requires 1 ETH
+        // Whitelist both pools
+        vm.startPrank(registryOwner);
+        address[] memory scheduleTargets = new address[](2);
+        scheduleTargets[0] = address(pool1);
+        scheduleTargets[1] = address(pool2);
+        bytes4[] memory scheduleSelectors = new bytes4[](2);
+        scheduleSelectors[0] = SWAP_SELECTOR;
+        scheduleSelectors[1] = SWAP_SELECTOR;
+        registry.scheduleAdd(scheduleTargets, scheduleSelectors);
+        vm.warp(block.timestamp + 1 days + 1);
+        registry.executeOperation(scheduleTargets, scheduleSelectors);
+        vm.stopPrank();
 
-        // Execute with exact required ETH
-        vm.prank(smartAccount);
-        guardedModule.executeGuardedBatch{value: 1 ether}(targets, calldatas, values);
-    }
-
-    /**
-     * @notice Test: Execute with excess ETH value should succeed
-     * @dev Verifies that executeGuardedBatch works when msg.value is greater than sum of values array (overpayment allowed)
-     */
-    function test_ExecuteWithExcessEthValue() public {
-        // Fund smart account with ETH
-        vm.deal(smartAccount, 10 ether);
-
-        address[] memory targets = new address[](1);
-        bytes[] memory calldatas = new bytes[](1);
-        uint256[] memory values = new uint256[](1);
-
-        targets[0] = address(uniswapPool);
-        calldatas[0] = abi.encodeWithSelector(SWAP_SELECTOR, 1000 ether, 900 ether);
-        values[0] = 1 ether; // Requires 1 ETH
-
-        // Execute with more ETH than required (overpayment allowed)
-        vm.prank(smartAccount);
-        guardedModule.executeGuardedBatch{value: 2 ether}(targets, calldatas, values);
-    }
-
-    /**
-     * @notice Test: Execute batch with multiple ETH values should validate total
-     * @dev Verifies that executeGuardedBatch validates msg.value against sum of all values in array
-     */
-    function test_ExecuteBatchWithMultipleEthValues() public {
-        // Fund smart account with ETH
-        vm.deal(smartAccount, 10 ether);
-
+        // Create batch execution with different ETH values
         address[] memory targets = new address[](2);
         bytes[] memory calldatas = new bytes[](2);
         uint256[] memory values = new uint256[](2);
 
-        targets[0] = address(uniswapPool);
+        targets[0] = address(pool1);
         calldatas[0] = abi.encodeWithSelector(SWAP_SELECTOR, 1000 ether, 900 ether);
-        values[0] = 1 ether; // Requires 1 ETH
+        values[0] = 1 ether; // Send 1 ETH to pool1
 
-        targets[1] = address(uniswapPool);
+        targets[1] = address(pool2);
         calldatas[1] = abi.encodeWithSelector(SWAP_SELECTOR, 2000 ether, 1800 ether);
-        values[1] = 2 ether; // Requires 2 ETH
+        values[1] = 2 ether; // Send 2 ETH to pool2
 
-        // Total required: 3 ETH
-        // Try with insufficient ETH
-        vm.prank(smartAccount);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                GuardedExecModuleUpgradeable.InsufficientEthValue.selector,
-                2 ether, // msg.value
-                3 ether // required value (1 + 2)
+        // Execute batch via smart account
+        instance.exec({
+            target: address(guardedModule),
+            value: 0, // Module doesn't accept ETH
+            callData: abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.executeGuardedBatch.selector, targets, calldatas, values
             )
-        );
-        guardedModule.executeGuardedBatch{value: 2 ether}(targets, calldatas, values);
+        });
 
-        // Try with exact required ETH
-        vm.prank(smartAccount);
-        guardedModule.executeGuardedBatch{value: 3 ether}(targets, calldatas, values);
+        // Verify ETH was sent to both target contracts
+        assertEq(address(pool1).balance, 1 ether, "Pool1 should have received 1 ETH");
+        assertEq(address(pool2).balance, 2 ether, "Pool2 should have received 2 ETH");
+
+        // Verify smart account balance decreased by total (3 ETH) plus gas costs
+        uint256 smartAccountBalance = smartAccount.balance;
+        assertGt(smartAccountBalance, 6 ether, "Smart account should have at least 6 ETH remaining");
+        assertLt(smartAccountBalance, 10 ether, "Smart account balance should be less than 10 ETH");
     }
 
     /**

@@ -134,11 +134,6 @@ contract GuardedExecModuleUpgradeable is
     /// @notice Thrown when calldata is invalid (too short or malformed)
     error InvalidCalldata();
 
-    /// @notice Thrown when msg.value is insufficient to cover the total values array sum
-    /// @param msgValue The ETH amount sent with the transaction
-    /// @param requiredValue The total ETH amount required (sum of values array)
-    error InsufficientEthValue(uint256 msgValue, uint256 requiredValue);
-
     /*//////////////////////////////////////////////////////////////
                              CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
@@ -267,7 +262,7 @@ contract GuardedExecModuleUpgradeable is
      * @dev Permissionless function. All target+selector combinations must be whitelisted.
      *      Executions maintain smart account context (msg.sender = smart account).
      *      All validations occur before execution (checks-effects-interactions pattern).
-     *      Function is payable to accept native ETH that will be forwarded to target contracts.
+     *      The smart account uses its own balance to forward ETH to target contracts.
      * @param targets Array of target contract addresses
      * @param calldatas Array of encoded function calls
      * @param values Array of native ETH values to send with each call
@@ -278,16 +273,12 @@ contract GuardedExecModuleUpgradeable is
         uint256[] calldata values
     )
         external
-        payable
         whenNotPaused
     {
         uint256 length = targets.length;
         if (length == 0) revert EmptyBatch();
         if (length != calldatas.length) revert LengthMismatch();
         if (length != values.length) revert LengthMismatch();
-
-        // Validate that msg.value covers the total required ETH
-        _validateEthValue(values, length);
 
         Execution[] memory executions = new Execution[](length);
         bytes4[] memory selectors = new bytes4[](length);
@@ -331,6 +322,8 @@ contract GuardedExecModuleUpgradeable is
         }
 
         // Execute batch via smart account (maintains msg.sender = smart account)
+        // The smart account uses its own balance to forward ETH to target contracts
+        // based on the Execution.value fields in the executions array
         _execute(executions);
 
         emit GuardedBatchExecuted(msg.sender, targets, selectors, block.timestamp);
@@ -361,27 +354,6 @@ contract GuardedExecModuleUpgradeable is
      * @param newImplementation The address of the new implementation contract
      */
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner { }
-
-    /**
-     * @notice Validate that msg.value covers the total ETH value required for all executions
-     * @dev Calculates sum of values array and verifies msg.value >= totalValue.
-     *      Reverts with InsufficientEthValue if msg.value is less than required.
-     * @param values Array of native ETH values to send with each call
-     * @param length Number of operations in the batch
-     */
-    function _validateEthValue(uint256[] calldata values, uint256 length) internal view {
-        uint256 totalValue;
-        for (uint256 i = 0; i < length;) {
-            totalValue += values[i];
-            unchecked {
-                ++i;
-            }
-        }
-
-        if (msg.value < totalValue) {
-            revert InsufficientEthValue(msg.value, totalValue);
-        }
-    }
 
     /**
      * @notice Validate ERC20 transfer authorization
