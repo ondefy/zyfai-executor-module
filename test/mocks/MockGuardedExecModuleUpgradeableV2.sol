@@ -48,10 +48,24 @@ contract MockGuardedExecModuleUpgradeableV2 is
                                STORAGE
     //////////////////////////////////////////////////////////////*/
 
-    /**
-     * @notice Registry contract for target + selector whitelist verification
-     */
-    TargetRegistry public registry;
+    /// @custom:storage-location erc7201:zyfai.storage.GuardedExecModule
+    struct GuardedExecModuleStorage {
+        /**
+         * @notice Registry contract for target + selector whitelist verification
+         */
+        TargetRegistry registry;
+    }
+
+    // keccak256(abi.encode(uint256(keccak256("zyfai.storage.GuardedExecModule")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant GUARDED_EXEC_MODULE_STORAGE_LOCATION =
+        0x295e5725ff7abc8ecde20ecacfd357d4e36e80a3400e382495405ddf25fc1100;
+
+    function _getGuardedExecModuleStorage() private pure returns (GuardedExecModuleStorage storage s) {
+        bytes32 position = GUARDED_EXEC_MODULE_STORAGE_LOCATION;
+        assembly {
+            s.slot := position
+        }
+    }
 
     /**
      * @notice Upgrade counter (new in V2) - tracks number of upgrades for testing
@@ -62,12 +76,6 @@ contract MockGuardedExecModuleUpgradeableV2 is
      * @notice Upgrade message (new in V2) - stores upgrade initialization message for testing
      */
     string public upgradeMessage;
-
-    /**
-     * @notice Storage gap for future variables in upgrades
-     * @dev Adjusted to 47 slots (50 - 3 new slots: upgradeCounter, upgradeMessage, and reduced gap)
-     */
-    uint256[47] private __gapMockV2;
 
     /*//////////////////////////////////////////////////////////////
                                EVENTS
@@ -137,7 +145,8 @@ contract MockGuardedExecModuleUpgradeableV2 is
         __Pausable_init();
         __UUPSUpgradeable_init();
 
-        registry = TargetRegistry(_registry);
+        GuardedExecModuleStorage storage s = _getGuardedExecModuleStorage();
+        s.registry = TargetRegistry(_registry);
     }
 
     /**
@@ -241,7 +250,8 @@ contract MockGuardedExecModuleUpgradeableV2 is
         if (length != values.length) revert LengthMismatch();
 
         Execution[] memory executions = new Execution[](length);
-        TargetRegistry reg = registry;
+        GuardedExecModuleStorage storage s = _getGuardedExecModuleStorage();
+        TargetRegistry reg = s.registry;
 
         // Single-pass validation and execution array building
         // All validations happen before any execution (security best practice)
@@ -285,10 +295,20 @@ contract MockGuardedExecModuleUpgradeableV2 is
     function updateRegistry(address newRegistry) external onlyOwner {
         if (newRegistry == address(0)) revert InvalidRegistry();
 
-        address oldRegistry = address(registry);
-        registry = TargetRegistry(newRegistry);
+        GuardedExecModuleStorage storage s = _getGuardedExecModuleStorage();
+        address oldRegistry = address(s.registry);
+        s.registry = TargetRegistry(newRegistry);
 
         emit RegistryUpdated(oldRegistry, newRegistry);
+    }
+
+    /**
+     * @notice Get the registry contract address
+     * @dev Returns the registry contract used for whitelist verification
+     * @return The TargetRegistry contract address
+     */
+    function registry() external view returns (TargetRegistry) {
+        return _getGuardedExecModuleStorage().registry;
     }
 
     /*//////////////////////////////////////////////////////////////

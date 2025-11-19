@@ -57,18 +57,26 @@ contract GuardedExecModuleUpgradeable is
                                STORAGE
     //////////////////////////////////////////////////////////////*/
 
-    /**
-     * @notice Registry contract for target + selector whitelist verification
-     * @dev Used to verify if target+selector combinations are whitelisted.
-     *      Can be updated via updateRegistry for migration.
-     */
-    TargetRegistry public registry;
+    /// @custom:storage-location erc7201:zyfai.storage.GuardedExecModule
+    struct GuardedExecModuleStorage {
+        /**
+         * @notice Registry contract for target + selector whitelist verification
+         * @dev Used to verify if target+selector combinations are whitelisted.
+         *      Can be updated via updateRegistry for migration.
+         */
+        TargetRegistry registry;
+    }
 
-    /**
-     * @notice Storage gap for future variables in upgrades
-     * @dev Prevents storage layout collisions in future upgrades. Reserved 50 storage slots.
-     */
-    uint256[50] private __gapGuardedExecModule;
+    // keccak256(abi.encode(uint256(keccak256("zyfai.storage.GuardedExecModule")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant GUARDED_EXEC_MODULE_STORAGE_LOCATION =
+        0x295e5725ff7abc8ecde20ecacfd357d4e36e80a3400e382495405ddf25fc1100;
+
+    function _getGuardedExecModuleStorage() private pure returns (GuardedExecModuleStorage storage s) {
+        bytes32 position = GUARDED_EXEC_MODULE_STORAGE_LOCATION;
+        assembly {
+            s.slot := position
+        }
+    }
 
     /*//////////////////////////////////////////////////////////////
                                EVENTS
@@ -164,7 +172,8 @@ contract GuardedExecModuleUpgradeable is
         __Pausable_init();
         __UUPSUpgradeable_init();
 
-        registry = TargetRegistry(_registry);
+        GuardedExecModuleStorage storage s = _getGuardedExecModuleStorage();
+        s.registry = TargetRegistry(_registry);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -206,6 +215,15 @@ contract GuardedExecModuleUpgradeable is
      */
     function isInitialized(address) external pure override returns (bool) {
         return true;
+    }
+
+    /**
+     * @notice Get the registry contract address
+     * @dev Returns the registry contract used for whitelist verification
+     * @return The TargetRegistry contract address
+     */
+    function registry() external view returns (TargetRegistry) {
+        return _getGuardedExecModuleStorage().registry;
     }
 
     /**
@@ -273,7 +291,8 @@ contract GuardedExecModuleUpgradeable is
 
         Execution[] memory executions = new Execution[](length);
         bytes4[] memory selectors = new bytes4[](length);
-        TargetRegistry reg = registry;
+        GuardedExecModuleStorage storage s = _getGuardedExecModuleStorage();
+        TargetRegistry reg = s.registry;
 
         // Single-pass validation and execution array building
         // All validations happen before any execution (security best practice)
@@ -325,8 +344,9 @@ contract GuardedExecModuleUpgradeable is
     function updateRegistry(address newRegistry) external onlyOwner {
         if (newRegistry == address(0)) revert InvalidRegistry();
 
-        address oldRegistry = address(registry);
-        registry = TargetRegistry(newRegistry);
+        GuardedExecModuleStorage storage s = _getGuardedExecModuleStorage();
+        address oldRegistry = address(s.registry);
+        s.registry = TargetRegistry(newRegistry);
 
         emit RegistryUpdated(oldRegistry, newRegistry);
     }
