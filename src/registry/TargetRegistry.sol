@@ -35,7 +35,7 @@ contract TargetRegistry is Ownable2Step, Pausable {
     /**
      * @notice OpenZeppelin TimelockController instance that enforces 1 day delay on whitelist
      * changes
-     * @dev Immutable. Controls access to _addToWhitelist and _removeFromWhitelist functions.
+     * @dev Immutable. Controls access to addToWhitelist and removeFromWhitelist functions.
      */
     TimelockController public immutable timelock;
 
@@ -505,7 +505,7 @@ contract TargetRegistry is Ownable2Step, Pausable {
         if (opMeta[target][selector].operationId != bytes32(0)) revert PendingOperationExists();
 
         bytes32 salt = _newSalt(target, selector);
-        bytes memory data = abi.encodeWithSelector(this._addToWhitelist.selector, target, selector);
+        bytes memory data = abi.encodeWithSelector(this.addToWhitelist.selector, target, selector);
 
         operationId = timelock.hashOperation(address(this), 0, data, bytes32(0), salt);
         timelock.schedule(address(this), 0, data, bytes32(0), salt, 1 days);
@@ -538,7 +538,7 @@ contract TargetRegistry is Ownable2Step, Pausable {
 
         bytes32 salt = _newSalt(target, selector);
         bytes memory data =
-            abi.encodeWithSelector(this._removeFromWhitelist.selector, target, selector);
+            abi.encodeWithSelector(this.removeFromWhitelist.selector, target, selector);
 
         operationId = timelock.hashOperation(address(this), 0, data, bytes32(0), salt);
         timelock.schedule(address(this), 0, data, bytes32(0), salt, 1 days);
@@ -564,8 +564,8 @@ contract TargetRegistry is Ownable2Step, Pausable {
         }
 
         bytes memory data = meta.isAdd
-            ? abi.encodeWithSelector(this._addToWhitelist.selector, target, selector)
-            : abi.encodeWithSelector(this._removeFromWhitelist.selector, target, selector);
+            ? abi.encodeWithSelector(this.addToWhitelist.selector, target, selector)
+            : abi.encodeWithSelector(this.removeFromWhitelist.selector, target, selector);
 
         timelock.execute(address(this), 0, data, bytes32(0), meta.salt);
         delete opMeta[target][selector];
@@ -595,7 +595,7 @@ contract TargetRegistry is Ownable2Step, Pausable {
      * @param target The contract address to add to whitelist
      * @param selector The function selector to add to whitelist
      */
-    function _addToWhitelist(address target, bytes4 selector) external {
+    function addToWhitelist(address target, bytes4 selector) external {
         if (msg.sender != address(timelock)) {
             revert UnauthorizedCaller(msg.sender);
         }
@@ -619,7 +619,7 @@ contract TargetRegistry is Ownable2Step, Pausable {
      * @param target The contract address to remove from whitelist
      * @param selector The function selector to remove from whitelist
      */
-    function _removeFromWhitelist(address target, bytes4 selector) external {
+    function removeFromWhitelist(address target, bytes4 selector) external {
         if (msg.sender != address(timelock)) {
             revert UnauthorizedCaller(msg.sender);
         }
