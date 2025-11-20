@@ -508,9 +508,13 @@ contract TargetRegistry is Ownable2Step, Pausable {
         bytes memory data = abi.encodeWithSelector(this.addToWhitelist.selector, target, selector);
 
         operationId = timelock.hashOperation(address(this), 0, data, bytes32(0), salt);
+
+        // Set state BEFORE external call (checks-effects-interactions pattern)
+        opMeta[target][selector] = OpMeta({ operationId: operationId, isAdd: true, salt: salt });
+
+        // External call after state change
         timelock.schedule(address(this), 0, data, bytes32(0), salt, 1 days);
 
-        opMeta[target][selector] = OpMeta({ operationId: operationId, isAdd: true, salt: salt });
         emit TargetSelectorScheduled(operationId, target, selector, block.timestamp + 1 days);
 
         return operationId;
@@ -541,9 +545,13 @@ contract TargetRegistry is Ownable2Step, Pausable {
             abi.encodeWithSelector(this.removeFromWhitelist.selector, target, selector);
 
         operationId = timelock.hashOperation(address(this), 0, data, bytes32(0), salt);
+
+        // Set state BEFORE external call (checks-effects-interactions pattern)
+        opMeta[target][selector] = OpMeta({ operationId: operationId, isAdd: false, salt: salt });
+
+        // External call after state change
         timelock.schedule(address(this), 0, data, bytes32(0), salt, 1 days);
 
-        opMeta[target][selector] = OpMeta({ operationId: operationId, isAdd: false, salt: salt });
         emit TargetSelectorScheduled(operationId, target, selector, block.timestamp + 1 days);
 
         return operationId;
@@ -567,8 +575,11 @@ contract TargetRegistry is Ownable2Step, Pausable {
             ? abi.encodeWithSelector(this.addToWhitelist.selector, target, selector)
             : abi.encodeWithSelector(this.removeFromWhitelist.selector, target, selector);
 
-        timelock.execute(address(this), 0, data, bytes32(0), meta.salt);
+        // Delete state BEFORE external call (checks-effects-interactions pattern)
         delete opMeta[target][selector];
+
+        // External call after state change
+        timelock.execute(address(this), 0, data, bytes32(0), meta.salt);
     }
 
     /**
@@ -584,8 +595,11 @@ contract TargetRegistry is Ownable2Step, Pausable {
             revert NoScheduledOperation(target, selector);
         }
 
-        timelock.cancel(meta.operationId);
+        // Delete state BEFORE external call (checks-effects-interactions pattern)
         delete opMeta[target][selector];
+
+        // External call after state change
+        timelock.cancel(meta.operationId);
     }
 
     /**
