@@ -22,8 +22,8 @@ GuardedExecModule is an ERC-7579 executor module that provides secure, whitelist
 
 - **Whitelist-Based Execution**: Only pre-approved target contract + function selector combinations can be executed
 - **ERC20 Transfer Restrictions**: Prevents arbitrary token transfers; only allows transfers to authorized recipients
-- **Time-Delayed Whitelist Management**: Whitelist changes require a 1-day timelock for security
-- **Emergency Pause**: Module can be paused immediately if session keys are compromised
+- **Direct Whitelist Management**: Owner can directly add/remove whitelisted targets and selectors
+- **Emergency Pause**: Module and registry can be paused immediately if session keys are compromised
 - **Upgradeable**: UUPS upgradeable pattern allows fixing bugs and adding features
 - **Batch Operations**: Execute multiple operations in a single transaction for gas efficiency
 
@@ -34,9 +34,9 @@ GuardedExecModule is an ERC-7579 executor module that provides secure, whitelist
    - The smart wallet itself
    - Wallet owners
    - Explicitly authorized recipients (e.g., DEX routers, lending protocols)
-3. **Timelock Protection**: Whitelist changes require 1-day delay (can be cancelled if incorrect)
-4. **Pausable**: Emergency stop capability for compromised session keys
-5. **Permissionless Execution**: After timelock, anyone can execute scheduled operations (prevents censorship)
+3. **Owner-Controlled Whitelist**: Only contract owner can modify whitelist (should be multisig for production)
+4. **Pausable**: Emergency stop capability for compromised session keys or malicious whitelist changes
+5. **Two-Step Ownership Transfer**: Prevents accidental or malicious ownership transfers
 
 ## 👥 Actors and Roles
 
@@ -50,20 +50,19 @@ GuardedExecModule is an ERC-7579 executor module that provides secure, whitelist
 - Update registry address (if owner of module)
 
 **Limitations**:
-- Cannot directly whitelist target+selector (must go through timelock)
 - Cannot execute operations directly through the module (must use session keys or smart account directly)
 
 ### 2. Registry Owner
 **Role**: Controls the TargetRegistry contract
 **Capabilities**:
-- Schedule whitelist additions/removals (subject to 1-day timelock)
-- Cancel pending whitelist operations
+- Add/remove whitelisted target+selector combinations (immediate)
 - Add/remove authorized ERC20 token recipients (immediate)
 - Pause/unpause the registry (emergency stop)
+- Transfer ownership (two-step process)
 
 **Limitations**:
-- Cannot execute scheduled operations immediately (must wait 1 day)
-- Cannot bypass timelock delay
+- Cannot modify whitelist when registry is paused
+- Cannot modify ERC20 recipient authorization when registry is paused
 
 ### 3. Session Key
 **Role**: Limited-authority key that can execute whitelisted operations
@@ -79,16 +78,6 @@ GuardedExecModule is an ERC-7579 executor module that provides secure, whitelist
 - Cannot modify the whitelist
 - Cannot upgrade the module
 
-### 4. Anyone (Permissionless Executor)
-**Role**: Can execute scheduled whitelist operations after timelock expires
-**Capabilities**:
-- Execute scheduled whitelist additions/removals after 1-day delay
-- Prevents censorship of legitimate whitelist changes
-
-**Limitations**:
-- Cannot execute operations before timelock expires
-- Cannot schedule operations
-- Cannot cancel operations
 
 ## 📁 Contract Architecture
 
@@ -102,9 +91,9 @@ GuardedExecModule is an ERC-7579 executor module that provides secure, whitelist
 
 2. **TargetRegistry** (`src/registry/TargetRegistry.sol`)
    - Manages whitelist of target+selector combinations
-   - Implements timelock for whitelist changes
+   - Owner-controlled whitelist management (immediate changes)
    - Manages ERC20 transfer recipient authorization
-   - Uses OpenZeppelin TimelockController
+   - Pausable for emergency stops
 
 3. **ISafeWallet** (`src/interfaces/ISafeWallet.sol`)
    - Interface for querying smart wallet owners
@@ -118,8 +107,6 @@ Smart Account
     ├──> GuardedExecModuleUpgradeable (Executor Module)
     │         │
     │         └──> TargetRegistry (Whitelist Verification)
-    │                   │
-    │                   ├──> TimelockController (Time-Delayed Changes)
     │                   │
     │                   └──> ISafeWallet (Owner Query for ERC20 Auth)
     │
@@ -135,10 +122,9 @@ Smart Account
    - Module executes batch operations via smart account (maintains context)
 
 2. **Whitelist Management Flow**:
-   - Registry owner calls `scheduleAdd()` or `scheduleRemove()` on TargetRegistry
-   - Operation is scheduled via TimelockController (1-day delay)
-   - After 1 day, anyone can call `executeOperation()` to finalize the change
-   - Owner can cancel pending operations via `cancelOperation()`
+   - Registry owner calls `addToWhitelist()` or `removeFromWhitelist()` on TargetRegistry
+   - Changes take effect immediately (if registry is not paused)
+   - Owner can pause the registry to prevent any whitelist modifications
 
 ## 🏗️ Building and Compiling
 
@@ -211,7 +197,7 @@ forge test --match-path "test/GuardedExecModuleUpgradeableTest.t.sol"
 
 ```bash
 # Run a specific test function
-forge test --match-test test_ScheduleAndExecuteAdd -vv
+forge test --match-test test_AddToWhitelist -vv
 
 # Run tests matching a pattern
 forge test --match-test "test_*ERC20*" -vv
@@ -238,7 +224,7 @@ forge coverage --report summary --ir-minimum
 - **Current Coverage**:
   - `GuardedExecModuleUpgradeable.sol`: 98.11% lines, 88.00% statements ✅
   - `TargetRegistry.sol`: 91.34% lines, 79.43% statements ✅
-- **Test Status**: All 45 tests passing ✅
+- **Test Status**: All 54 tests passing ✅
 
 ### Clean Environment Testing
 
@@ -277,18 +263,19 @@ All tests should pass and coverage should be >80% in a clean environment.
 
 ### Test Files
 
-- `test/GuardedExecModuleUpgradeableTest.t.sol`: 25 tests
-- `test/TargetRegistryTest.t.sol`: 20 tests
-- **Total**: 45 tests
+- `test/GuardedExecModuleUpgradeableTest.t.sol`: 32 tests
+- `test/TargetRegistryTest.t.sol`: 22 tests
+- **Total**: 54 tests
 
 ### Test Categories
 
 - ✅ Whitelist validation tests
 - ✅ ERC20 transfer authorization tests
-- ✅ Timelock operation tests
+- ✅ Direct whitelist management tests
 - ✅ Pause/unpause tests
 - ✅ Upgrade tests
 - ✅ Batch operation tests
+- ✅ Two-step ownership transfer tests
 - ✅ Edge cases and error conditions
 - ✅ Input validation tests (empty batches, length mismatches)
 - ✅ Invalid input tests (zero addresses, invalid selectors)
@@ -363,28 +350,24 @@ forge verify-contract <PROXY_ADDRESS> lib/openzeppelin-contracts/contracts/proxy
 
 ## 🔒 Security Considerations
 
-### Timelock Delay
-
-- **Current Setting**: 1 day (86400 seconds)
-- **Purpose**: Provides window to cancel malicious or incorrect whitelist changes
-- **For Production**: Consider increasing to 24-48 hours for higher security
-
 ### Access Control
 
 - **Module Owner**: Can pause/unpause and upgrade (should be multisig)
-- **Registry Owner**: Can schedule whitelist changes (should be multisig)
+- **Registry Owner**: Can modify whitelist and ERC20 recipient authorization (should be multisig)
 - **Session Keys**: Can only execute whitelisted operations
+- **Two-Step Ownership**: Ownership transfers require explicit acceptance from new owner
 
 ### Emergency Procedures
 
 1. **Compromised Session Key**: Pause the module immediately via `pause()`
-2. **Malicious Whitelist Change**: Cancel the operation via `cancelOperation()`
+2. **Malicious Whitelist Change**: Pause the registry immediately via `pause()` to prevent further changes
 3. **Critical Vulnerability**: Pause both module and registry
+4. **Incorrect Whitelist Addition**: Remove the entry immediately via `removeFromWhitelist()`
 
 ## 📚 Additional Resources
 
 - [ERC-7579 Standard](https://eips.ethereum.org/EIPS/eip-7579)
-- [OpenZeppelin TimelockController](https://docs.openzeppelin.com/contracts/4.x/api/governance#TimelockController)
+- [OpenZeppelin Contracts](https://docs.openzeppelin.com/contracts/)
 - [ModuleKit Documentation](https://docs.rhinestone.wtf/modulekit/)
 
 ## 📄 License
@@ -397,4 +380,4 @@ ZyFAI
 
 ---
 
-**Note**: This protocol is designed for production use with proper access control (multisig wallets) and appropriate timelock delays. Always conduct security audits before deploying to mainnet.
+**Note**: This protocol is designed for production use with proper access control (multisig wallets for both module and registry owners). Always conduct security audits before deploying to mainnet.

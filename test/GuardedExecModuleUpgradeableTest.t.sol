@@ -91,35 +91,29 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         vm.label(address(usdcToken), "USDC");
         vm.label(address(wethToken), "WETH");
 
-        // Schedule and execute whitelist operations (with OpenZeppelin timelock)
+        // Add whitelist entries directly
         vm.startPrank(registryOwner);
 
-        // Schedule adds for DeFi pools and ERC20 tokens (batch operation)
-        address[] memory scheduleTargets = new address[](7);
-        scheduleTargets[0] = address(uniswapPool);
-        scheduleTargets[1] = address(aavePool);
-        scheduleTargets[2] = address(curvePool);
-        scheduleTargets[3] = address(usdcToken);
-        scheduleTargets[4] = address(wethToken);
-        scheduleTargets[5] = address(usdcToken);
-        scheduleTargets[6] = address(wethToken);
+        // Add DeFi pools and ERC20 tokens to whitelist (batch operation)
+        address[] memory whitelistTargets = new address[](7);
+        whitelistTargets[0] = address(uniswapPool);
+        whitelistTargets[1] = address(aavePool);
+        whitelistTargets[2] = address(curvePool);
+        whitelistTargets[3] = address(usdcToken);
+        whitelistTargets[4] = address(wethToken);
+        whitelistTargets[5] = address(usdcToken);
+        whitelistTargets[6] = address(wethToken);
 
-        bytes4[] memory scheduleSelectors = new bytes4[](7);
-        scheduleSelectors[0] = SWAP_SELECTOR;
-        scheduleSelectors[1] = SWAP_SELECTOR;
-        scheduleSelectors[2] = SWAP_SELECTOR;
-        scheduleSelectors[3] = TRANSFER_SELECTOR;
-        scheduleSelectors[4] = TRANSFER_SELECTOR;
-        scheduleSelectors[5] = APPROVE_SELECTOR;
-        scheduleSelectors[6] = APPROVE_SELECTOR;
+        bytes4[] memory whitelistSelectors = new bytes4[](7);
+        whitelistSelectors[0] = SWAP_SELECTOR;
+        whitelistSelectors[1] = SWAP_SELECTOR;
+        whitelistSelectors[2] = SWAP_SELECTOR;
+        whitelistSelectors[3] = TRANSFER_SELECTOR;
+        whitelistSelectors[4] = TRANSFER_SELECTOR;
+        whitelistSelectors[5] = APPROVE_SELECTOR;
+        whitelistSelectors[6] = APPROVE_SELECTOR;
 
-        registry.scheduleAdd(scheduleTargets, scheduleSelectors);
-
-        // Fast forward time by 1 day + 1 second
-        vm.warp(block.timestamp + 1 days + 1);
-
-        // Execute the operations (ANYONE can execute with OpenZeppelin!)
-        registry.executeOperation(scheduleTargets, scheduleSelectors);
+        registry.addToWhitelist(whitelistTargets, whitelistSelectors);
 
         vm.stopPrank();
 
@@ -164,32 +158,26 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         registry = new TestTargetRegistryWithMockSafe(registryOwner, address(mockSafeWallet));
         vm.label(address(registry), "TestTargetRegistryWithMockSafe");
 
-        // Schedule and execute whitelist operations
-        address[] memory scheduleTargets2 = new address[](7);
-        scheduleTargets2[0] = address(uniswapPool);
-        scheduleTargets2[1] = address(aavePool);
-        scheduleTargets2[2] = address(curvePool);
-        scheduleTargets2[3] = address(usdcToken);
-        scheduleTargets2[4] = address(wethToken);
-        scheduleTargets2[5] = address(usdcToken);
-        scheduleTargets2[6] = address(wethToken);
+        // Add whitelist entries directly
+        address[] memory whitelistTargets2 = new address[](7);
+        whitelistTargets2[0] = address(uniswapPool);
+        whitelistTargets2[1] = address(aavePool);
+        whitelistTargets2[2] = address(curvePool);
+        whitelistTargets2[3] = address(usdcToken);
+        whitelistTargets2[4] = address(wethToken);
+        whitelistTargets2[5] = address(usdcToken);
+        whitelistTargets2[6] = address(wethToken);
 
-        bytes4[] memory scheduleSelectors2 = new bytes4[](7);
-        scheduleSelectors2[0] = SWAP_SELECTOR;
-        scheduleSelectors2[1] = SWAP_SELECTOR;
-        scheduleSelectors2[2] = SWAP_SELECTOR;
-        scheduleSelectors2[3] = TRANSFER_SELECTOR;
-        scheduleSelectors2[4] = TRANSFER_SELECTOR;
-        scheduleSelectors2[5] = APPROVE_SELECTOR;
-        scheduleSelectors2[6] = APPROVE_SELECTOR;
+        bytes4[] memory whitelistSelectors2 = new bytes4[](7);
+        whitelistSelectors2[0] = SWAP_SELECTOR;
+        whitelistSelectors2[1] = SWAP_SELECTOR;
+        whitelistSelectors2[2] = SWAP_SELECTOR;
+        whitelistSelectors2[3] = TRANSFER_SELECTOR;
+        whitelistSelectors2[4] = TRANSFER_SELECTOR;
+        whitelistSelectors2[5] = APPROVE_SELECTOR;
+        whitelistSelectors2[6] = APPROVE_SELECTOR;
 
-        registry.scheduleAdd(scheduleTargets2, scheduleSelectors2);
-
-        // Fast forward time by 1 day + 1 second
-        vm.warp(block.timestamp + 1 days + 1);
-
-        // Execute the operations
-        registry.executeOperation(scheduleTargets2, scheduleSelectors2);
+        registry.addToWhitelist(whitelistTargets2, whitelistSelectors2);
 
         vm.stopPrank();
 
@@ -391,16 +379,13 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         vm.label(address(newRegistry), "NewRegistry");
 
         // Add the same whitelist entries
-        address[] memory scheduleTargets3 = new address[](2);
-        scheduleTargets3[0] = address(uniswapPool);
-        scheduleTargets3[1] = address(usdcToken);
-        bytes4[] memory scheduleSelectors3 = new bytes4[](2);
-        scheduleSelectors3[0] = SWAP_SELECTOR;
-        scheduleSelectors3[1] = TRANSFER_SELECTOR;
-        newRegistry.scheduleAdd(scheduleTargets3, scheduleSelectors3);
-
-        vm.warp(block.timestamp + 1 days + 1);
-        newRegistry.executeOperation(scheduleTargets3, scheduleSelectors3);
+        address[] memory whitelistTargets3 = new address[](2);
+        whitelistTargets3[0] = address(uniswapPool);
+        whitelistTargets3[1] = address(usdcToken);
+        bytes4[] memory whitelistSelectors3 = new bytes4[](2);
+        whitelistSelectors3[0] = SWAP_SELECTOR;
+        whitelistSelectors3[1] = TRANSFER_SELECTOR;
+        newRegistry.addToWhitelist(whitelistTargets3, whitelistSelectors3);
         vm.stopPrank();
 
         // Update registry
@@ -808,26 +793,18 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
 
     /**
-     * @notice Test: Anyone can execute scheduled operation after timelock expires
+     * @notice Test: Owner can add to whitelist directly
      */
-    function test_PermissionlessExecution() public {
+    function test_OwnerCanAddToWhitelist() public {
         MockDeFiPool newPool = new MockDeFiPool();
 
-        // Owner schedules
+        // Owner adds to whitelist directly
         vm.prank(registryOwner);
-        address[] memory scheduleTargets4 = new address[](1);
-        scheduleTargets4[0] = address(newPool);
-        bytes4[] memory scheduleSelectors4 = new bytes4[](1);
-        scheduleSelectors4[0] = SWAP_SELECTOR;
-        registry.scheduleAdd(scheduleTargets4, scheduleSelectors4);
-
-        // Fast forward 1 day
-        vm.warp(block.timestamp + 1 days + 1);
-
-        // Random user executes (this is an OpenZeppelin feature!)
-        address randomUser = makeAddr("randomUser");
-        vm.prank(randomUser);
-        registry.executeOperation(scheduleTargets4, scheduleSelectors4);
+        address[] memory whitelistTargets4 = new address[](1);
+        whitelistTargets4[0] = address(newPool);
+        bytes4[] memory whitelistSelectors4 = new bytes4[](1);
+        whitelistSelectors4[0] = SWAP_SELECTOR;
+        registry.addToWhitelist(whitelistTargets4, whitelistSelectors4);
 
         // Verify it's whitelisted
         bool whitelisted = registry.isWhitelisted(address(newPool), SWAP_SELECTOR);
@@ -842,29 +819,28 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
 
         vm.startPrank(registryOwner);
 
-        // First verify scheduling works when not paused
-        address[] memory scheduleTargets5 = new address[](1);
-        scheduleTargets5[0] = address(maliciousPool);
-        bytes4[] memory scheduleSelectors5 = new bytes4[](1);
-        scheduleSelectors5[0] = SWAP_SELECTOR;
-        registry.scheduleAdd(scheduleTargets5, scheduleSelectors5);
+        // First verify adding works when not paused
+        address[] memory whitelistTargets5 = new address[](1);
+        whitelistTargets5[0] = address(maliciousPool);
+        bytes4[] memory whitelistSelectors5 = new bytes4[](1);
+        whitelistSelectors5[0] = SWAP_SELECTOR;
+        registry.addToWhitelist(whitelistTargets5, whitelistSelectors5);
 
-        // Cancel it for cleanup
-        vm.warp(block.timestamp - 1); // Reset time
-        registry.cancelOperation(scheduleTargets5, scheduleSelectors5);
+        // Remove it for cleanup
+        registry.removeFromWhitelist(whitelistTargets5, whitelistSelectors5);
 
         // EMERGENCY: Owner wallet compromised! Pause the registry!
         registry.pause();
 
-        // Attacker (using compromised owner key) tries to schedule malicious pool
+        // Attacker (using compromised owner key) tries to add malicious pool
         vm.expectRevert();
-        registry.scheduleAdd(scheduleTargets5, scheduleSelectors5);
+        registry.addToWhitelist(whitelistTargets5, whitelistSelectors5);
 
         // Unpause after securing the owner wallet
         registry.unpause();
 
-        // Can schedule again
-        registry.scheduleAdd(scheduleTargets5, scheduleSelectors5);
+        // Can add again
+        registry.addToWhitelist(whitelistTargets5, whitelistSelectors5);
 
         vm.stopPrank();
     }
@@ -1158,15 +1134,13 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
 
         // Whitelist both pools
         vm.startPrank(registryOwner);
-        address[] memory scheduleTargets = new address[](2);
-        scheduleTargets[0] = address(pool1);
-        scheduleTargets[1] = address(pool2);
-        bytes4[] memory scheduleSelectors = new bytes4[](2);
-        scheduleSelectors[0] = SWAP_SELECTOR;
-        scheduleSelectors[1] = SWAP_SELECTOR;
-        registry.scheduleAdd(scheduleTargets, scheduleSelectors);
-        vm.warp(block.timestamp + 1 days + 1);
-        registry.executeOperation(scheduleTargets, scheduleSelectors);
+        address[] memory whitelistTargets = new address[](2);
+        whitelistTargets[0] = address(pool1);
+        whitelistTargets[1] = address(pool2);
+        bytes4[] memory whitelistSelectors = new bytes4[](2);
+        whitelistSelectors[0] = SWAP_SELECTOR;
+        whitelistSelectors[1] = SWAP_SELECTOR;
+        registry.addToWhitelist(whitelistTargets, whitelistSelectors);
         vm.stopPrank();
 
         // Create batch execution with different ETH values

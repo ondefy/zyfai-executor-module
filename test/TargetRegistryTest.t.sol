@@ -24,136 +24,131 @@ contract TargetRegistryTest is Test {
     }
 
     /**
-     * @notice Test: Schedule and execute whitelist addition after timelock delay
+     * @notice Test: Add target+selector to whitelist directly
      */
-    function test_ScheduleAndExecuteAdd() public {
-        vm.startPrank(owner);
-
-        // Schedule add
+    function test_AddToWhitelist() public {
         address[] memory targets = new address[](1);
         targets[0] = mockTarget;
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = SWAP_SELECTOR;
-        registry.scheduleAdd(targets, selectors);
 
-        // Check it's pending
-        bool isPending = registry.isOperationPending(mockTarget, SWAP_SELECTOR);
-        assertTrue(isPending, "Should be pending");
-
-        // Check it's not ready yet
-        bool isReady = registry.isOperationReady(mockTarget, SWAP_SELECTOR);
-        assertFalse(isReady, "Should not be ready yet");
-
-        vm.stopPrank();
-
-        // Fast forward 1 day
-        vm.warp(block.timestamp + 1 days + 1);
-
-        // Now it should be ready
-        isReady = registry.isOperationReady(mockTarget, SWAP_SELECTOR);
-        assertTrue(isReady, "Should be ready now");
-
-        // Execute (anyone can execute!)
-        vm.prank(user);
-        registry.executeOperation(targets, selectors);
+        vm.prank(owner);
+        registry.addToWhitelist(targets, selectors);
 
         // Verify it's whitelisted
         bool whitelisted = registry.isWhitelisted(mockTarget, SWAP_SELECTOR);
         assertTrue(whitelisted, "Should be whitelisted");
+
+        // Verify target is marked as whitelisted
+        assertTrue(registry.isWhitelistedTarget(mockTarget), "Target should be marked as whitelisted");
+        assertEq(registry.whitelistedSelectorCount(mockTarget), 1, "Selector count should be 1");
     }
 
     /**
-     * @notice Test: Cannot execute scheduled operation before timelock expires
+     * @notice Test: Remove target+selector from whitelist directly
      */
-    function test_CannotExecuteBeforeTimelock() public {
+    function test_RemoveFromWhitelist() public {
         address[] memory targets = new address[](1);
         targets[0] = mockTarget;
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = SWAP_SELECTOR;
 
+        // First add it
         vm.prank(owner);
-        registry.scheduleAdd(targets, selectors);
+        registry.addToWhitelist(targets, selectors);
+        assertTrue(registry.isWhitelisted(mockTarget, SWAP_SELECTOR), "Should be whitelisted");
 
-        // Try to execute immediately (should fail)
-        vm.expectRevert();
-        registry.executeOperation(targets, selectors);
-
-        // Try after 30 seconds (should still fail)
-        vm.warp(block.timestamp + 30 seconds);
-        vm.expectRevert();
-        registry.executeOperation(targets, selectors);
-    }
-
-    /**
-     * @notice Test: Anyone can execute scheduled operation after timelock expires
-     */
-    function test_AnyoneCanExecuteAfterTimelock() public {
-        address[] memory targets = new address[](1);
-        targets[0] = mockTarget;
-        bytes4[] memory selectors = new bytes4[](1);
-        selectors[0] = SWAP_SELECTOR;
-
+        // Then remove it
         vm.prank(owner);
-        registry.scheduleAdd(targets, selectors);
+        registry.removeFromWhitelist(targets, selectors);
 
-        // Fast forward 1 day
-        vm.warp(block.timestamp + 1 days + 1);
-
-        // Random user can execute
-        address randomUser = makeAddr("randomUser");
-        vm.prank(randomUser);
-        registry.executeOperation(targets, selectors);
-
+        // Verify it's not whitelisted
         bool whitelisted = registry.isWhitelisted(mockTarget, SWAP_SELECTOR);
-        assertTrue(whitelisted);
+        assertFalse(whitelisted, "Should not be whitelisted");
+
+        // Verify target is no longer marked as whitelisted
+        assertFalse(registry.isWhitelistedTarget(mockTarget), "Target should not be marked as whitelisted");
+        assertEq(registry.whitelistedSelectorCount(mockTarget), 0, "Selector count should be 0");
     }
 
     /**
-     * @notice Test: Owner can cancel pending operation before execution
+     * @notice Test: Only owner can add to whitelist
      */
-    function test_CancelOperation() public {
+    function test_OnlyOwnerCanAddToWhitelist() public {
+        address[] memory targets = new address[](1);
+        targets[0] = mockTarget;
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = SWAP_SELECTOR;
+
+        // Non-owner cannot add
+        vm.prank(user);
+        vm.expectRevert();
+        registry.addToWhitelist(targets, selectors);
+
+        // Owner can add
+        vm.prank(owner);
+        registry.addToWhitelist(targets, selectors);
+        assertTrue(registry.isWhitelisted(mockTarget, SWAP_SELECTOR), "Should be whitelisted");
+    }
+
+    /**
+     * @notice Test: Only owner can remove from whitelist
+     */
+    function test_OnlyOwnerCanRemoveFromWhitelist() public {
+        address[] memory targets = new address[](1);
+        targets[0] = mockTarget;
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = SWAP_SELECTOR;
+
+        // First add it (as owner)
+        vm.prank(owner);
+        registry.addToWhitelist(targets, selectors);
+
+        // Non-owner cannot remove
+        vm.prank(user);
+        vm.expectRevert();
+        registry.removeFromWhitelist(targets, selectors);
+
+        // Owner can remove
+        vm.prank(owner);
+        registry.removeFromWhitelist(targets, selectors);
+        assertFalse(registry.isWhitelisted(mockTarget, SWAP_SELECTOR), "Should not be whitelisted");
+    }
+
+    /**
+     * @notice Test: Cannot add already whitelisted target+selector
+     */
+    function test_CannotAddAlreadyWhitelisted() public {
         address[] memory targets = new address[](1);
         targets[0] = mockTarget;
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = SWAP_SELECTOR;
 
         vm.startPrank(owner);
+        registry.addToWhitelist(targets, selectors);
 
-        registry.scheduleAdd(targets, selectors);
-
-        // Cancel it
-        registry.cancelOperation(targets, selectors);
-
+        // Try to add again (should fail)
+        vm.expectRevert(TargetRegistry.AlreadyWhitelisted.selector);
+        registry.addToWhitelist(targets, selectors);
         vm.stopPrank();
-
-        // Fast forward
-        vm.warp(block.timestamp + 2 days);
-
-        // Try to execute (should fail - operation was cancelled)
-        vm.expectRevert();
-        registry.executeOperation(targets, selectors);
     }
 
     /**
-     * @notice Test: Get operation ID for scheduled operation
+     * @notice Test: Cannot remove non-whitelisted target+selector
      */
-    function test_GetOperationId() public {
+    function test_CannotRemoveNotWhitelisted() public {
         address[] memory targets = new address[](1);
         targets[0] = mockTarget;
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = SWAP_SELECTOR;
 
         vm.prank(owner);
-        bytes32[] memory scheduledOpIds = registry.scheduleAdd(targets, selectors);
-
-        // Retrieve using helper
-        bytes32 retrievedOpId = registry.getOperationId(mockTarget, SWAP_SELECTOR);
-
-        assertEq(scheduledOpIds[0], retrievedOpId, "Operation IDs should match");
+        vm.expectRevert(TargetRegistry.NotWhitelisted.selector);
+        registry.removeFromWhitelist(targets, selectors);
     }
 
     /**
-     * @notice Test: Registry pause prevents scheduling operations
+     * @notice Test: Registry pause prevents whitelist operations
      */
     function test_RegistryPause() public {
         vm.startPrank(owner);
@@ -161,61 +156,37 @@ contract TargetRegistryTest is Test {
         // Pause the registry
         registry.pause();
 
-        // Try to schedule while paused (should fail)
+        // Try to add while paused (should fail)
         address[] memory targets = new address[](1);
         targets[0] = mockTarget;
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = SWAP_SELECTOR;
         vm.expectRevert();
-        registry.scheduleAdd(targets, selectors);
+        registry.addToWhitelist(targets, selectors);
+
+        // Try to remove while paused (should fail)
+        vm.expectRevert();
+        registry.removeFromWhitelist(targets, selectors);
+
+        // Try to add ERC20 recipient while paused (should fail)
+        address token = makeAddr("token");
+        address[] memory recipients = new address[](1);
+        recipients[0] = makeAddr("recipient");
+        vm.expectRevert();
+        registry.addAllowedERC20TokenRecipient(token, recipients);
+
+        // Try to remove ERC20 recipient while paused (should fail)
+        vm.expectRevert();
+        registry.removeAllowedERC20TokenRecipient(token, recipients);
 
         // Unpause
         registry.unpause();
 
         // Should work now
-        registry.scheduleAdd(targets, selectors);
+        registry.addToWhitelist(targets, selectors);
+        assertTrue(registry.isWhitelisted(mockTarget, SWAP_SELECTOR), "Should be whitelisted");
 
         vm.stopPrank();
-    }
-
-    /**
-     * @notice Test: Execute operation is blocked when registry is paused
-     * @dev Verifies that executeOperation() respects the pause state and reverts when paused.
-     *      This prevents scheduled operations from executing during emergency situations.
-     */
-    function test_ExecuteOperationBlockedWhenPaused() public {
-        address[] memory targets = new address[](1);
-        targets[0] = mockTarget;
-        bytes4[] memory selectors = new bytes4[](1);
-        selectors[0] = SWAP_SELECTOR;
-
-        // Schedule an operation
-        vm.prank(owner);
-        registry.scheduleAdd(targets, selectors);
-
-        // Fast forward past timelock delay
-        vm.warp(block.timestamp + 1 days + 1);
-
-        // Verify operation is ready to execute
-        assertTrue(registry.isOperationReady(mockTarget, SWAP_SELECTOR), "Operation should be ready");
-
-        // Pause the registry (emergency stop)
-        vm.prank(owner);
-        registry.pause();
-
-        // Try to execute while paused (should fail)
-        vm.expectRevert();
-        registry.executeOperation(targets, selectors);
-
-        // Unpause
-        vm.prank(owner);
-        registry.unpause();
-
-        // Now execution should work
-        registry.executeOperation(targets, selectors);
-
-        // Verify it was executed
-        assertTrue(registry.isWhitelisted(mockTarget, SWAP_SELECTOR), "Should be whitelisted after execution");
     }
 
     /**
@@ -402,87 +373,90 @@ contract TargetRegistryTest is Test {
     }
 
     /**
-     * @notice Test: Can re-schedule same target+selector after execution
-     * @dev Verifies that unique salt allows re-scheduling the same pair
+     * @notice Test: Can add and remove multiple times
      */
-    function test_CanRescheduleAfterExecution() public {
+    function test_CanAddAndRemoveMultipleTimes() public {
         address[] memory targets = new address[](1);
         targets[0] = mockTarget;
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = SWAP_SELECTOR;
 
-        // ✅ CRITICAL TEST: Can add → execute → remove → execute → add again
-        // This would have FAILED with the old fixed salt implementation
+        vm.startPrank(owner);
 
-        // Step 1: Add
-        vm.prank(owner);
-        registry.scheduleAdd(targets, selectors);
-        vm.warp(block.timestamp + 1 days + 1);
-        registry.executeOperation(targets, selectors);
+        // Add
+        registry.addToWhitelist(targets, selectors);
         assertTrue(
             registry.isWhitelisted(mockTarget, SWAP_SELECTOR), "Should be whitelisted after add"
         );
 
-        // Step 2: Remove
-        vm.prank(owner);
-        registry.scheduleRemove(targets, selectors);
-        vm.warp(block.timestamp + 1 days + 1);
-        registry.executeOperation(targets, selectors);
+        // Remove
+        registry.removeFromWhitelist(targets, selectors);
         assertFalse(
             registry.isWhitelisted(mockTarget, SWAP_SELECTOR),
             "Should not be whitelisted after remove"
         );
 
-        // Step 3: Add again (this would have FAILED before the fix!)
-        vm.prank(owner);
-        registry.scheduleAdd(targets, selectors); // ✅ Should work now with unique salt!
-        vm.warp(block.timestamp + 1 days + 1);
-        registry.executeOperation(targets, selectors);
+        // Add again
+        registry.addToWhitelist(targets, selectors);
         assertTrue(
             registry.isWhitelisted(mockTarget, SWAP_SELECTOR),
             "Should be whitelisted after second add"
         );
+
+        vm.stopPrank();
     }
 
     /**
-     * @notice Test: Cannot schedule duplicate operation before execution
+     * @notice Test: Batch operations work correctly
      */
-    function test_CannotScheduleDuplicateOperation() public {
-        address[] memory targets = new address[](1);
-        targets[0] = mockTarget;
-        bytes4[] memory selectors = new bytes4[](1);
-        selectors[0] = SWAP_SELECTOR;
+    function test_BatchOperations() public {
+        address target1 = makeAddr("target1");
+        address target2 = makeAddr("target2");
+        bytes4 selector1 = SWAP_SELECTOR;
+        bytes4 selector2 = bytes4(keccak256("deposit(uint256)"));
 
-        // Schedule first operation
-        vm.prank(owner);
-        registry.scheduleAdd(targets, selectors);
+        address[] memory targets = new address[](2);
+        targets[0] = target1;
+        targets[1] = target2;
+        bytes4[] memory selectors = new bytes4[](2);
+        selectors[0] = selector1;
+        selectors[1] = selector2;
 
-        // Try to schedule again before executing the first (should fail)
         vm.prank(owner);
-        vm.expectRevert(TargetRegistry.PendingOperationExists.selector);
-        registry.scheduleAdd(targets, selectors);
+        registry.addToWhitelist(targets, selectors);
+
+        assertTrue(registry.isWhitelisted(target1, selector1), "Target1+selector1 should be whitelisted");
+        assertTrue(registry.isWhitelisted(target2, selector2), "Target2+selector2 should be whitelisted");
+        assertEq(registry.whitelistedSelectorCount(target1), 1, "Target1 should have 1 selector");
+        assertEq(registry.whitelistedSelectorCount(target2), 1, "Target2 should have 1 selector");
+
+        vm.prank(owner);
+        registry.removeFromWhitelist(targets, selectors);
+
+        assertFalse(registry.isWhitelisted(target1, selector1), "Target1+selector1 should not be whitelisted");
+        assertFalse(registry.isWhitelisted(target2, selector2), "Target2+selector2 should not be whitelisted");
     }
 
     /**
-     * @notice Test: Cannot schedule with empty batch
+     * @notice Test: Cannot add with empty batch
      */
-    function test_CannotScheduleEmptyBatch() public {
+    function test_CannotAddEmptyBatch() public {
         address[] memory emptyTargets = new address[](0);
         bytes4[] memory emptySelectors = new bytes4[](0);
 
         vm.prank(owner);
         vm.expectRevert(TargetRegistry.EmptyBatch.selector);
-        registry.scheduleAdd(emptyTargets, emptySelectors);
+        registry.addToWhitelist(emptyTargets, emptySelectors);
 
         vm.prank(owner);
         vm.expectRevert(TargetRegistry.EmptyBatch.selector);
-        registry.scheduleRemove(emptyTargets, emptySelectors);
+        registry.removeFromWhitelist(emptyTargets, emptySelectors);
     }
 
     /**
-     * @notice Test: Cannot schedule with mismatched array lengths
+     * @notice Test: Cannot add with mismatched array lengths
      */
-    function test_CannotScheduleWithLengthMismatch() public {
+    function test_CannotAddWithLengthMismatch() public {
         address[] memory targets = new address[](2);
         targets[0] = mockTarget;
         targets[1] = makeAddr("target2");
@@ -491,17 +465,17 @@ contract TargetRegistryTest is Test {
 
         vm.prank(owner);
         vm.expectRevert(TargetRegistry.LengthMismatch.selector);
-        registry.scheduleAdd(targets, selectors);
+        registry.addToWhitelist(targets, selectors);
 
         vm.prank(owner);
         vm.expectRevert(TargetRegistry.LengthMismatch.selector);
-        registry.scheduleRemove(targets, selectors);
+        registry.removeFromWhitelist(targets, selectors);
     }
 
     /**
-     * @notice Test: Cannot schedule with zero address target
+     * @notice Test: Cannot add with zero address target
      */
-    function test_CannotScheduleZeroAddressTarget() public {
+    function test_CannotAddZeroAddressTarget() public {
         address[] memory targets = new address[](1);
         targets[0] = address(0);
         bytes4[] memory selectors = new bytes4[](1);
@@ -509,17 +483,17 @@ contract TargetRegistryTest is Test {
 
         vm.prank(owner);
         vm.expectRevert(TargetRegistry.InvalidTarget.selector);
-        registry.scheduleAdd(targets, selectors);
+        registry.addToWhitelist(targets, selectors);
 
         vm.prank(owner);
         vm.expectRevert(TargetRegistry.InvalidTarget.selector);
-        registry.scheduleRemove(targets, selectors);
+        registry.removeFromWhitelist(targets, selectors);
     }
 
     /**
-     * @notice Test: Cannot schedule with zero selector
+     * @notice Test: Cannot add with zero selector
      */
-    function test_CannotScheduleZeroSelector() public {
+    function test_CannotAddZeroSelector() public {
         address[] memory targets = new address[](1);
         targets[0] = mockTarget;
         bytes4[] memory selectors = new bytes4[](1);
@@ -527,11 +501,11 @@ contract TargetRegistryTest is Test {
 
         vm.prank(owner);
         vm.expectRevert(TargetRegistry.InvalidSelector.selector);
-        registry.scheduleAdd(targets, selectors);
+        registry.addToWhitelist(targets, selectors);
 
         vm.prank(owner);
         vm.expectRevert(TargetRegistry.InvalidSelector.selector);
-        registry.scheduleRemove(targets, selectors);
+        registry.removeFromWhitelist(targets, selectors);
     }
 
     /**
@@ -560,102 +534,46 @@ contract TargetRegistryTest is Test {
     }
 
     /**
-     * @notice Test: Cannot execute with empty batch
+     * @notice Test: Multiple selectors on same target update counter correctly
      */
-    function test_CannotExecuteEmptyBatch() public {
-        address[] memory emptyTargets = new address[](0);
-        bytes4[] memory emptySelectors = new bytes4[](0);
+    function test_MultipleSelectorsOnSameTarget() public {
+        bytes4 selector1 = SWAP_SELECTOR;
+        bytes4 selector2 = bytes4(keccak256("deposit(uint256)"));
+        bytes4 selector3 = bytes4(keccak256("withdraw(uint256)"));
 
-        vm.expectRevert(TargetRegistry.EmptyBatch.selector);
-        registry.executeOperation(emptyTargets, emptySelectors);
-
-        vm.prank(owner);
-        vm.expectRevert(TargetRegistry.EmptyBatch.selector);
-        registry.cancelOperation(emptyTargets, emptySelectors);
-    }
-
-    /**
-     * @notice Test: Cannot execute with mismatched array lengths
-     */
-    function test_CannotExecuteWithLengthMismatch() public {
-        address[] memory targets = new address[](2);
-        targets[0] = mockTarget;
-        targets[1] = makeAddr("target2");
-        bytes4[] memory selectors = new bytes4[](1);
-        selectors[0] = SWAP_SELECTOR;
-
-        vm.expectRevert(TargetRegistry.LengthMismatch.selector);
-        registry.executeOperation(targets, selectors);
-
-        vm.prank(owner);
-        vm.expectRevert(TargetRegistry.LengthMismatch.selector);
-        registry.cancelOperation(targets, selectors);
-    }
-
-    /**
-     * @notice Test: Nonce ensures unique operation IDs (prevents salt collision vulnerability)
-     * @dev Demonstrates that scheduling multiple operations produces different operation IDs
-     *      even when scheduled in the same block/timestamp, due to the nonce counter.
-     *      Without nonce, if block.timestamp and block.prevrandao were identical,
-     *      salts could collide. Nonce prevents this attack.
-     */
-    function test_NonceEnsuresUniqueOperationIds() public {
-        address target1 = makeAddr("target1");
-        address target2 = makeAddr("target2");
-        address target3 = makeAddr("target3");
-        address target4 = makeAddr("target4");
-        bytes4 selector = SWAP_SELECTOR;
-
-        address[] memory targets1 = new address[](1);
-        targets1[0] = target1;
-        address[] memory targets2 = new address[](1);
-        targets2[0] = target2;
-        address[] memory targets3 = new address[](1);
-        targets3[0] = target3;
-        address[] memory targets4 = new address[](1);
-        targets4[0] = target4;
-        bytes4[] memory selectors = new bytes4[](1);
-        selectors[0] = selector;
-
-        // Schedule four operations in rapid succession (same timestamp)
-        // Without nonce, if timestamp+prevrandao matched, salts could collide
         vm.startPrank(owner);
-        bytes32 opId1 = registry.scheduleAdd(targets1, selectors)[0];
-        bytes32 opId2 = registry.scheduleAdd(targets2, selectors)[0];
-        bytes32 opId3 = registry.scheduleAdd(targets3, selectors)[0];
-        bytes32 opId4 = registry.scheduleAdd(targets4, selectors)[0];
+
+        // Add first selector
+        address[] memory targets1 = new address[](1);
+        targets1[0] = mockTarget;
+        bytes4[] memory selectors1 = new bytes4[](1);
+        selectors1[0] = selector1;
+        registry.addToWhitelist(targets1, selectors1);
+
+        assertEq(registry.whitelistedSelectorCount(mockTarget), 1, "Should have 1 selector");
+        assertTrue(registry.isWhitelistedTarget(mockTarget), "Target should be whitelisted");
+
+        // Add second selector
+        bytes4[] memory selectors2 = new bytes4[](1);
+        selectors2[0] = selector2;
+        registry.addToWhitelist(targets1, selectors2);
+
+        assertEq(registry.whitelistedSelectorCount(mockTarget), 2, "Should have 2 selectors");
+        assertTrue(registry.isWhitelistedTarget(mockTarget), "Target should still be whitelisted");
+
+        // Remove first selector
+        registry.removeFromWhitelist(targets1, selectors1);
+
+        assertEq(registry.whitelistedSelectorCount(mockTarget), 1, "Should have 1 selector");
+        assertTrue(registry.isWhitelistedTarget(mockTarget), "Target should still be whitelisted");
+
+        // Remove second selector
+        registry.removeFromWhitelist(targets1, selectors2);
+
+        assertEq(registry.whitelistedSelectorCount(mockTarget), 0, "Should have 0 selectors");
+        assertFalse(registry.isWhitelistedTarget(mockTarget), "Target should no longer be whitelisted");
+
         vm.stopPrank();
-
-        // All operation IDs must be unique (nonce increments ensure this)
-        assertNotEq(opId1, opId2, "Operation IDs 1 and 2 must be unique");
-        assertNotEq(opId1, opId3, "Operation IDs 1 and 3 must be unique");
-        assertNotEq(opId1, opId4, "Operation IDs 1 and 4 must be unique");
-        assertNotEq(opId2, opId3, "Operation IDs 2 and 3 must be unique");
-        assertNotEq(opId2, opId4, "Operation IDs 2 and 4 must be unique");
-        assertNotEq(opId3, opId4, "Operation IDs 3 and 4 must be unique");
-
-        // Now test add/remove cycle to verify nonce continues to ensure uniqueness
-        vm.warp(block.timestamp + 1 days + 1);
-        registry.executeOperation(targets1, selectors);
-
-        // Remove target1
-        vm.prank(owner);
-        bytes32 removeOpId = registry.scheduleRemove(targets1, selectors)[0];
-
-        // Remove operation ID must be different from add operation ID
-        assertNotEq(opId1, removeOpId, "Add and remove operations must have unique IDs");
-
-        // Execute removal
-        vm.warp(block.timestamp + 1 days + 1);
-        registry.executeOperation(targets1, selectors);
-
-        // Add target1 again - should get different operation ID due to nonce
-        vm.prank(owner);
-        bytes32 secondAddOpId = registry.scheduleAdd(targets1, selectors)[0];
-
-        // All operation IDs must be different (nonce increments on each operation)
-        assertNotEq(opId1, secondAddOpId, "First and second add must have unique IDs");
-        assertNotEq(removeOpId, secondAddOpId, "Remove and second add must have unique IDs");
     }
 
     /**
