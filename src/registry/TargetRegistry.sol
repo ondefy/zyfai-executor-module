@@ -613,16 +613,18 @@ contract TargetRegistry is Ownable2Step, Pausable {
         if (msg.sender != address(timelock)) {
             revert UnauthorizedCaller(msg.sender);
         }
-        
-        // Only increment if this selector wasn't already whitelisted
-        if (!whitelist[target][selector]) {
-            whitelist[target][selector] = true;
-            unchecked {
-                whitelistedSelectorCount[target]++;
-            }
-            whitelistedTargets[target] = true; // Mark target as whitelisted
+
+        // Validate state: prevent redundant operations
+        if (whitelist[target][selector]) {
+            revert AlreadyWhitelisted();
         }
-        
+
+        whitelist[target][selector] = true;
+        unchecked {
+            whitelistedSelectorCount[target]++;
+        }
+        whitelistedTargets[target] = true; // Mark target as whitelisted
+
         emit TargetSelectorAdded(target, selector);
     }
 
@@ -637,20 +639,22 @@ contract TargetRegistry is Ownable2Step, Pausable {
         if (msg.sender != address(timelock)) {
             revert UnauthorizedCaller(msg.sender);
         }
-        
-        // Only decrement if this selector was whitelisted
-        if (whitelist[target][selector]) {
-            whitelist[target][selector] = false;
-            unchecked {
-                whitelistedSelectorCount[target]--;
-            }
-            
-            // If counter reaches zero, mark target as no longer whitelisted
-            if (whitelistedSelectorCount[target] == 0) {
-                whitelistedTargets[target] = false;
-            }
+
+        // Validate state: prevent redundant operations
+        if (!whitelist[target][selector]) {
+            revert NotWhitelisted();
         }
-        
+
+        whitelist[target][selector] = false;
+        unchecked {
+            whitelistedSelectorCount[target]--;
+        }
+
+        // If counter reaches zero, mark target as no longer whitelisted
+        if (whitelistedSelectorCount[target] == 0) {
+            whitelistedTargets[target] = false;
+        }
+
         emit TargetSelectorRemoved(target, selector);
     }
 
