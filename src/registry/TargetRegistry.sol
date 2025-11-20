@@ -158,6 +158,15 @@ contract TargetRegistry is Ownable2Step, Pausable {
     ///          that already has a pending operation
     error PendingOperationExists();
 
+    /// @notice Thrown when attempting to execute or cancel an operation that doesn't exist
+    /// @param target The target contract address
+    /// @param selector The function selector
+    error NoScheduledOperation(address target, bytes4 selector);
+
+    /// @notice Thrown when a function is called by an unauthorized caller (not timelock)
+    /// @param caller The address that attempted to call the function
+    error UnauthorizedCaller(address caller);
+
     /// @notice Thrown when an ERC20 transfer is attempted to an unauthorized recipient
     /// @param token The ERC20 token address
     /// @param to The unauthorized recipient address
@@ -550,7 +559,9 @@ contract TargetRegistry is Ownable2Step, Pausable {
      */
     function _executeOperation(address target, bytes4 selector) internal {
         OpMeta memory meta = opMeta[target][selector];
-        require(meta.operationId != bytes32(0), "No scheduled operation");
+        if (meta.operationId == bytes32(0)) {
+            revert NoScheduledOperation(target, selector);
+        }
 
         bytes memory data = meta.isAdd
             ? abi.encodeWithSelector(this._addToWhitelist.selector, target, selector)
@@ -569,7 +580,9 @@ contract TargetRegistry is Ownable2Step, Pausable {
      */
     function _cancelOperation(address target, bytes4 selector) internal {
         OpMeta memory meta = opMeta[target][selector];
-        require(meta.operationId != bytes32(0), "No scheduled operation");
+        if (meta.operationId == bytes32(0)) {
+            revert NoScheduledOperation(target, selector);
+        }
 
         timelock.cancel(meta.operationId);
         delete opMeta[target][selector];
@@ -583,7 +596,9 @@ contract TargetRegistry is Ownable2Step, Pausable {
      * @param selector The function selector to add to whitelist
      */
     function _addToWhitelist(address target, bytes4 selector) external {
-        require(msg.sender == address(timelock), "Only timelock");
+        if (msg.sender != address(timelock)) {
+            revert UnauthorizedCaller(msg.sender);
+        }
         
         // Only increment if this selector wasn't already whitelisted
         if (!whitelist[target][selector]) {
@@ -605,7 +620,9 @@ contract TargetRegistry is Ownable2Step, Pausable {
      * @param selector The function selector to remove from whitelist
      */
     function _removeFromWhitelist(address target, bytes4 selector) external {
-        require(msg.sender == address(timelock), "Only timelock");
+        if (msg.sender != address(timelock)) {
+            revert UnauthorizedCaller(msg.sender);
+        }
         
         // Only decrement if this selector was whitelisted
         if (whitelist[target][selector]) {
