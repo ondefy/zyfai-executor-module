@@ -394,17 +394,48 @@ async function main() {
     //   ]
     // });
 
+    // Encode transfer(address recipient,uint256 amount) for USDC
+    // Example values:
+    // - recipient: safeAccount.address (just as an example, could be another address)
+    // - amount: 10000 (1 USDC in 6 decimals)
+    const TRANSFER_AMOUNT = BigInt(1000); // e.g., 0.01 USDC (6 decimals)
+    const transferData = encodeFunctionData({
+      abi: [
+        {
+          "inputs": [
+            { "internalType": "address", "name": "recipient", "type": "address" },
+            { "internalType": "uint256", "name": "amount", "type": "uint256" }
+          ],
+          "name": "transfer",
+          "outputs": [
+            { "internalType": "bool", "name": "", "type": "bool" }
+          ],
+          "stateMutability": "nonpayable",
+          "type": "function"
+        }
+      ],
+      functionName: 'transfer',
+      args: [
+        // "0xbA2aaF97D76dBF4dC9B9779683A22f5Ed4F23BcA", //mmalicious
+        "0xd61C43c089852e0AB68B967dD1eDe03a18e52223",
+        TRANSFER_AMOUNT
+      ]
+    });
+
     // Prepare data for executeGuardedBatch (USDC approve, AAVE supply)
     const guardedExecCallData = encodeFunctionData({
       abi: guardedExecModuleAbi,
       functionName: 'executeGuardedBatch',
       args: [
         // Targets: USDC (approve), AAVE (supply)
-        [USDC_ADDRESS, AAVE_POOL_ADDRESS],
+        // [USDC_ADDRESS, AAVE_POOL_ADDRESS],
+        [USDC_ADDRESS],
         // Calldatas must match targets above
-        [approveData, supplyData],
+        // [approveData, supplyData],
+        [transferData],
         // Values: both 0 for ERC20 operations
-        [BigInt(0), BigInt(0)],
+        // [BigInt(0), BigInt(0)],
+        [BigInt(0)],
       ]
     });
 
