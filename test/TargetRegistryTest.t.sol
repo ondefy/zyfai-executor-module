@@ -10,7 +10,7 @@ contract TargetRegistryTest is Test {
     TargetRegistry public registry;
     address public owner;
     address public user;
-
+    
     address public mockTarget;
     bytes4 public constant SWAP_SELECTOR = bytes4(keccak256("swap(uint256,uint256)"));
 
@@ -18,7 +18,7 @@ contract TargetRegistryTest is Test {
         owner = makeAddr("owner");
         user = makeAddr("user");
         mockTarget = makeAddr("mockTarget");
-
+        
         vm.prank(owner);
         registry = new TargetRegistry(owner);
     }
@@ -34,16 +34,16 @@ contract TargetRegistryTest is Test {
 
         vm.prank(owner);
         registry.addToWhitelist(targets, selectors);
-
-        // Verify it's whitelisted
-        bool whitelisted = registry.isWhitelisted(mockTarget, SWAP_SELECTOR);
+        
+        // Verify it's whitelisted (using auto-generated getter)
+        bool whitelisted = registry.whitelist(mockTarget, SWAP_SELECTOR);
         assertTrue(whitelisted, "Should be whitelisted");
 
-        // Verify target is marked as whitelisted
-        assertTrue(registry.isWhitelistedTarget(mockTarget), "Target should be marked as whitelisted");
+        // Verify target is marked as whitelisted (using auto-generated getter)
+        assertTrue(registry.whitelistedTargets(mockTarget), "Target should be marked as whitelisted");
         assertEq(registry.whitelistedSelectorCount(mockTarget), 1, "Selector count should be 1");
     }
-
+    
     /**
      * @notice Test: Remove target+selector from whitelist directly
      */
@@ -52,22 +52,22 @@ contract TargetRegistryTest is Test {
         targets[0] = mockTarget;
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = SWAP_SELECTOR;
-
+        
         // First add it
         vm.prank(owner);
         registry.addToWhitelist(targets, selectors);
-        assertTrue(registry.isWhitelisted(mockTarget, SWAP_SELECTOR), "Should be whitelisted");
+        assertTrue(registry.whitelist(mockTarget, SWAP_SELECTOR), "Should be whitelisted");
 
         // Then remove it
         vm.prank(owner);
         registry.removeFromWhitelist(targets, selectors);
-
-        // Verify it's not whitelisted
-        bool whitelisted = registry.isWhitelisted(mockTarget, SWAP_SELECTOR);
+        
+        // Verify it's not whitelisted (using auto-generated getter)
+        bool whitelisted = registry.whitelist(mockTarget, SWAP_SELECTOR);
         assertFalse(whitelisted, "Should not be whitelisted");
 
-        // Verify target is no longer marked as whitelisted
-        assertFalse(registry.isWhitelistedTarget(mockTarget), "Target should not be marked as whitelisted");
+        // Verify target is no longer marked as whitelisted (using auto-generated getter)
+        assertFalse(registry.whitelistedTargets(mockTarget), "Target should not be marked as whitelisted");
         assertEq(registry.whitelistedSelectorCount(mockTarget), 0, "Selector count should be 0");
     }
 
@@ -84,13 +84,13 @@ contract TargetRegistryTest is Test {
         vm.prank(user);
         vm.expectRevert();
         registry.addToWhitelist(targets, selectors);
-
+        
         // Owner can add
         vm.prank(owner);
         registry.addToWhitelist(targets, selectors);
-        assertTrue(registry.isWhitelisted(mockTarget, SWAP_SELECTOR), "Should be whitelisted");
+        assertTrue(registry.whitelist(mockTarget, SWAP_SELECTOR), "Should be whitelisted");
     }
-
+    
     /**
      * @notice Test: Only owner can remove from whitelist
      */
@@ -99,22 +99,22 @@ contract TargetRegistryTest is Test {
         targets[0] = mockTarget;
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = SWAP_SELECTOR;
-
+        
         // First add it (as owner)
         vm.prank(owner);
         registry.addToWhitelist(targets, selectors);
-
+        
         // Non-owner cannot remove
         vm.prank(user);
         vm.expectRevert();
         registry.removeFromWhitelist(targets, selectors);
-
+        
         // Owner can remove
         vm.prank(owner);
         registry.removeFromWhitelist(targets, selectors);
-        assertFalse(registry.isWhitelisted(mockTarget, SWAP_SELECTOR), "Should not be whitelisted");
+        assertFalse(registry.whitelist(mockTarget, SWAP_SELECTOR), "Should not be whitelisted");
     }
-
+    
     /**
      * @notice Test: Cannot add already whitelisted target+selector
      */
@@ -123,10 +123,10 @@ contract TargetRegistryTest is Test {
         targets[0] = mockTarget;
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = SWAP_SELECTOR;
-
+        
         vm.startPrank(owner);
         registry.addToWhitelist(targets, selectors);
-
+        
         // Try to add again (should fail)
         vm.expectRevert(TargetRegistry.AlreadyWhitelisted.selector);
         registry.addToWhitelist(targets, selectors);
@@ -141,21 +141,21 @@ contract TargetRegistryTest is Test {
         targets[0] = mockTarget;
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = SWAP_SELECTOR;
-
+        
         vm.prank(owner);
         vm.expectRevert(TargetRegistry.NotWhitelisted.selector);
         registry.removeFromWhitelist(targets, selectors);
     }
-
+    
     /**
      * @notice Test: Registry pause prevents whitelist operations
      */
     function test_RegistryPause() public {
         vm.startPrank(owner);
-
+        
         // Pause the registry
         registry.pause();
-
+        
         // Try to add while paused (should fail)
         address[] memory targets = new address[](1);
         targets[0] = mockTarget;
@@ -178,17 +178,17 @@ contract TargetRegistryTest is Test {
         // Try to remove ERC20 recipient while paused (should fail)
         vm.expectRevert();
         registry.removeAllowedERC20TokenRecipient(token, recipients);
-
+        
         // Unpause
         registry.unpause();
-
+        
         // Should work now
         registry.addToWhitelist(targets, selectors);
-        assertTrue(registry.isWhitelisted(mockTarget, SWAP_SELECTOR), "Should be whitelisted");
-
+        assertTrue(registry.whitelist(mockTarget, SWAP_SELECTOR), "Should be whitelisted");
+        
         vm.stopPrank();
     }
-
+    
     /**
      * @notice Test: Only owner can pause and unpause registry
      */
@@ -197,21 +197,21 @@ contract TargetRegistryTest is Test {
         vm.prank(user);
         vm.expectRevert();
         registry.pause();
-
+        
         // Owner can pause
         vm.prank(owner);
         registry.pause();
-
+        
         // Non-owner tries to unpause
         vm.prank(user);
         vm.expectRevert();
         registry.unpause();
-
+        
         // Owner can unpause
         vm.prank(owner);
         registry.unpause();
     }
-
+    
     /**
      * @notice Test: ERC20 transfer authorization checks with mock Safe wallet
      */
@@ -221,59 +221,59 @@ contract TargetRegistryTest is Test {
         address owner1 = makeAddr("owner1");
         address owner2 = makeAddr("owner2");
         address randomAddress = makeAddr("randomAddress");
-
+        
         // Deploy mock Safe wallet
         address[] memory safeOwners = new address[](2);
         safeOwners[0] = smartWallet; // Smart wallet itself
         safeOwners[1] = owner1; // Additional owner
-
+        
         MockSafeWallet mockSafe = new MockSafeWallet(safeOwners);
-
+        
         // Deploy test registry with mock Safe
         TestTargetRegistryWithMockSafe testRegistry =
             new TestTargetRegistryWithMockSafe(owner, address(mockSafe));
-
+        
         // All tokens are now effectively restricted by default
         // Test 1: Any token transfer to random address should fail
         address wethToken = makeAddr("wethToken");
         assertFalse(
-            testRegistry.isERC20TransferAuthorized(wethToken, randomAddress, smartWallet),
+            testRegistry.isERC20TransferAuthorized(wethToken, randomAddress, smartWallet), 
             "Non-authorized recipient blocked"
         );
-
+        
         // Test 2: Transfer to smart wallet itself should work
         assertTrue(
-            testRegistry.isERC20TransferAuthorized(usdcToken, smartWallet, smartWallet),
+            testRegistry.isERC20TransferAuthorized(usdcToken, smartWallet, smartWallet), 
             "Transfer to smart wallet itself allowed"
         );
-
+        
         // Test 3: Transfer to Safe owner should work
         assertTrue(
-            testRegistry.isERC20TransferAuthorized(usdcToken, owner1, smartWallet),
+            testRegistry.isERC20TransferAuthorized(usdcToken, owner1, smartWallet), 
             "Transfer to Safe owner allowed"
         );
-
+        
         // Test 4: Transfer to random address should fail
         assertFalse(
-            testRegistry.isERC20TransferAuthorized(usdcToken, randomAddress, smartWallet),
+            testRegistry.isERC20TransferAuthorized(usdcToken, randomAddress, smartWallet), 
             "Transfer to random address blocked"
         );
-
+        
         // Test 5: Test with updated owners
         address[] memory newOwners = new address[](3);
         newOwners[0] = smartWallet;
         newOwners[1] = owner1;
         newOwners[2] = owner2;
-
+        
         mockSafe.setOwners(newOwners);
-
+        
         // Now transfer to owner2 should work
         assertTrue(
-            testRegistry.isERC20TransferAuthorized(usdcToken, owner2, smartWallet),
+            testRegistry.isERC20TransferAuthorized(usdcToken, owner2, smartWallet), 
             "Transfer to new Safe owner allowed"
         );
     }
-
+    
     /**
      * @notice Test: ERC20 transfers to explicitly allowed recipients
      */
@@ -281,49 +281,49 @@ contract TargetRegistryTest is Test {
         address usdcToken = makeAddr("usdcToken");
         address feeVault = makeAddr("feeVault");
         address smartWallet = makeAddr("smartWallet");
-
+        
         // Deploy mock Safe wallet
         address[] memory safeOwners = new address[](1);
         safeOwners[0] = smartWallet;
-
+        
         MockSafeWallet mockSafe = new MockSafeWallet(safeOwners);
-
+        
         // Deploy test registry with mock Safe
         TestTargetRegistryWithMockSafe testRegistry =
             new TestTargetRegistryWithMockSafe(owner, address(mockSafe));
-
+        
         vm.startPrank(owner);
-
+        
         // Add fee vault as allowed recipient
         address[] memory feeVaultArray1 = new address[](1);
         feeVaultArray1[0] = feeVault;
         testRegistry.addAllowedERC20TokenRecipient(usdcToken, feeVaultArray1);
-
+        
         // Verify transfer to fee vault is authorized
         assertTrue(
-            testRegistry.isERC20TransferAuthorized(usdcToken, feeVault, smartWallet),
+            testRegistry.isERC20TransferAuthorized(usdcToken, feeVault, smartWallet), 
             "Transfer to fee vault should be authorized"
         );
-
+        
         // Verify transfer to random address is NOT authorized
         address randomAddress = makeAddr("randomAddress");
         assertFalse(
-            testRegistry.isERC20TransferAuthorized(usdcToken, randomAddress, smartWallet),
+            testRegistry.isERC20TransferAuthorized(usdcToken, randomAddress, smartWallet), 
             "Transfer to random address should not be authorized"
         );
-
+        
         // Remove fee vault from allowed recipients
         testRegistry.removeAllowedERC20TokenRecipient(usdcToken, feeVaultArray1);
-
+        
         // Verify transfer to fee vault is now NOT authorized
         assertFalse(
-            testRegistry.isERC20TransferAuthorized(usdcToken, feeVault, smartWallet),
+            testRegistry.isERC20TransferAuthorized(usdcToken, feeVault, smartWallet), 
             "Transfer to fee vault should not be authorized after removal"
         );
-
+        
         vm.stopPrank();
     }
-
+    
     /**
      * @notice Test: Add and remove allowed ERC20 token recipients
      */
@@ -331,9 +331,9 @@ contract TargetRegistryTest is Test {
         address usdcToken = makeAddr("usdcToken");
         address feeVault = makeAddr("feeVault");
         address morphoAdapter = makeAddr("morphoAdapter");
-
+        
         vm.startPrank(owner);
-
+        
         // Test adding fee vault as allowed recipient
         assertFalse(
             registry.allowedERC20TokenRecipients(usdcToken, feeVault),
@@ -345,7 +345,7 @@ contract TargetRegistryTest is Test {
         assertTrue(
             registry.allowedERC20TokenRecipients(usdcToken, feeVault), "Fee vault now allowed"
         );
-
+        
         // Test adding morpho adapter as allowed recipient
         address[] memory morphoArray = new address[](1);
         morphoArray[0] = morphoAdapter;
@@ -354,24 +354,24 @@ contract TargetRegistryTest is Test {
             registry.allowedERC20TokenRecipients(usdcToken, morphoAdapter),
             "Morpho adapter now allowed"
         );
-
+        
         // Test removing fee vault
         registry.removeAllowedERC20TokenRecipient(usdcToken, feeVaultArray);
         assertFalse(
             registry.allowedERC20TokenRecipients(usdcToken, feeVault), "Fee vault no longer allowed"
         );
-
+        
         // Test adding same recipient twice (should fail)
         vm.expectRevert();
         registry.addAllowedERC20TokenRecipient(usdcToken, morphoArray); // Already allowed
-
+        
         // Test removing non-allowed recipient (should fail)
         vm.expectRevert();
         registry.removeAllowedERC20TokenRecipient(usdcToken, feeVaultArray); // Not allowed
-
+        
         vm.stopPrank();
     }
-
+    
     /**
      * @notice Test: Can add and remove multiple times
      */
@@ -380,26 +380,26 @@ contract TargetRegistryTest is Test {
         targets[0] = mockTarget;
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = SWAP_SELECTOR;
-
+        
         vm.startPrank(owner);
 
         // Add
         registry.addToWhitelist(targets, selectors);
         assertTrue(
-            registry.isWhitelisted(mockTarget, SWAP_SELECTOR), "Should be whitelisted after add"
+            registry.whitelist(mockTarget, SWAP_SELECTOR), "Should be whitelisted after add"
         );
 
         // Remove
         registry.removeFromWhitelist(targets, selectors);
         assertFalse(
-            registry.isWhitelisted(mockTarget, SWAP_SELECTOR),
+            registry.whitelist(mockTarget, SWAP_SELECTOR),
             "Should not be whitelisted after remove"
         );
 
         // Add again
         registry.addToWhitelist(targets, selectors);
         assertTrue(
-            registry.isWhitelisted(mockTarget, SWAP_SELECTOR),
+            registry.whitelist(mockTarget, SWAP_SELECTOR),
             "Should be whitelisted after second add"
         );
 
@@ -425,16 +425,16 @@ contract TargetRegistryTest is Test {
         vm.prank(owner);
         registry.addToWhitelist(targets, selectors);
 
-        assertTrue(registry.isWhitelisted(target1, selector1), "Target1+selector1 should be whitelisted");
-        assertTrue(registry.isWhitelisted(target2, selector2), "Target2+selector2 should be whitelisted");
+        assertTrue(registry.whitelist(target1, selector1), "Target1+selector1 should be whitelisted");
+        assertTrue(registry.whitelist(target2, selector2), "Target2+selector2 should be whitelisted");
         assertEq(registry.whitelistedSelectorCount(target1), 1, "Target1 should have 1 selector");
         assertEq(registry.whitelistedSelectorCount(target2), 1, "Target2 should have 1 selector");
 
         vm.prank(owner);
         registry.removeFromWhitelist(targets, selectors);
 
-        assertFalse(registry.isWhitelisted(target1, selector1), "Target1+selector1 should not be whitelisted");
-        assertFalse(registry.isWhitelisted(target2, selector2), "Target2+selector2 should not be whitelisted");
+        assertFalse(registry.whitelist(target1, selector1), "Target1+selector1 should not be whitelisted");
+        assertFalse(registry.whitelist(target2, selector2), "Target2+selector2 should not be whitelisted");
     }
 
     /**
@@ -471,7 +471,7 @@ contract TargetRegistryTest is Test {
         vm.expectRevert(TargetRegistry.LengthMismatch.selector);
         registry.removeFromWhitelist(targets, selectors);
     }
-
+    
     /**
      * @notice Test: Cannot add with zero address target
      */
@@ -480,7 +480,7 @@ contract TargetRegistryTest is Test {
         targets[0] = address(0);
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = SWAP_SELECTOR;
-
+        
         vm.prank(owner);
         vm.expectRevert(TargetRegistry.InvalidTarget.selector);
         registry.addToWhitelist(targets, selectors);
@@ -551,7 +551,7 @@ contract TargetRegistryTest is Test {
         registry.addToWhitelist(targets1, selectors1);
 
         assertEq(registry.whitelistedSelectorCount(mockTarget), 1, "Should have 1 selector");
-        assertTrue(registry.isWhitelistedTarget(mockTarget), "Target should be whitelisted");
+        assertTrue(registry.whitelistedTargets(mockTarget), "Target should be whitelisted");
 
         // Add second selector
         bytes4[] memory selectors2 = new bytes4[](1);
@@ -559,19 +559,19 @@ contract TargetRegistryTest is Test {
         registry.addToWhitelist(targets1, selectors2);
 
         assertEq(registry.whitelistedSelectorCount(mockTarget), 2, "Should have 2 selectors");
-        assertTrue(registry.isWhitelistedTarget(mockTarget), "Target should still be whitelisted");
+        assertTrue(registry.whitelistedTargets(mockTarget), "Target should still be whitelisted");
 
         // Remove first selector
         registry.removeFromWhitelist(targets1, selectors1);
 
         assertEq(registry.whitelistedSelectorCount(mockTarget), 1, "Should have 1 selector");
-        assertTrue(registry.isWhitelistedTarget(mockTarget), "Target should still be whitelisted");
+        assertTrue(registry.whitelistedTargets(mockTarget), "Target should still be whitelisted");
 
         // Remove second selector
         registry.removeFromWhitelist(targets1, selectors2);
 
         assertEq(registry.whitelistedSelectorCount(mockTarget), 0, "Should have 0 selectors");
-        assertFalse(registry.isWhitelistedTarget(mockTarget), "Target should no longer be whitelisted");
+        assertFalse(registry.whitelistedTargets(mockTarget), "Target should no longer be whitelisted");
 
         vm.stopPrank();
     }
@@ -630,7 +630,7 @@ contract TargetRegistryTest is Test {
         vm.prank(owner);
         registry.transferOwnership(firstPendingOwner);
         assertEq(registry.pendingOwner(), firstPendingOwner, "First pending owner should be set");
-
+        
         // Owner replaces with second pending owner
         vm.prank(owner);
         registry.transferOwnership(secondPendingOwner);

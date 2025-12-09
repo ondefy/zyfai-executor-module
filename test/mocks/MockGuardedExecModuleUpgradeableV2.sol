@@ -17,7 +17,7 @@ import { TargetRegistry } from "../../src/registry/TargetRegistry.sol";
  *      Adds new storage variables (upgradeCounter, upgradeMessage) to test storage layout
  * compatibility.
  */
-contract MockGuardedExecModuleUpgradeableV2 is
+contract MockGuardedExecModuleUpgradeableV2 is 
     ERC7579ExecutorBase,
     OwnableUpgradeable,
     PausableUpgradeable,
@@ -26,11 +26,16 @@ contract MockGuardedExecModuleUpgradeableV2 is
     /*//////////////////////////////////////////////////////////////
                                CONSTANTS
     //////////////////////////////////////////////////////////////*/
-
+    
     /**
      * @notice ERC20 transfer function selector for gas optimization
      */
     bytes4 private constant TRANSFER_SELECTOR = IERC20.transfer.selector;
+    
+    /**
+     * @notice ERC20 approve function selector for gas optimization
+     */
+    bytes4 private constant APPROVE_SELECTOR = IERC20.approve.selector;
 
     /**
      * @notice Minimum calldata length required to extract function selector
@@ -47,7 +52,7 @@ contract MockGuardedExecModuleUpgradeableV2 is
     /*//////////////////////////////////////////////////////////////
                                STORAGE
     //////////////////////////////////////////////////////////////*/
-
+    
     /// @custom:storage-location erc7201:zyfai.storage.GuardedExecModule
     struct GuardedExecModuleStorage {
         /**
@@ -111,6 +116,11 @@ contract MockGuardedExecModuleUpgradeableV2 is
     /// @param to The unauthorized recipient address
     error UnauthorizedERC20Transfer(address token, address to);
 
+    /// @notice Thrown when ERC20 approve is attempted to unauthorized spender
+    /// @param token The ERC20 token address
+    /// @param spender The unauthorized spender address
+    error UnauthorizedERC20Approve(address token, address spender);
+
     /// @notice Thrown when calldata is invalid (too short or malformed)
     error InvalidCalldata();
 
@@ -140,11 +150,11 @@ contract MockGuardedExecModuleUpgradeableV2 is
      */
     function initialize(address _registry, address _owner) external initializer {
         if (_registry == address(0)) revert InvalidRegistry();
-
+        
         __Ownable_init(_owner);
         __Pausable_init();
         __UUPSUpgradeable_init();
-
+        
         GuardedExecModuleStorage storage s = _getGuardedExecModuleStorage();
         s.registry = TargetRegistry(_registry);
     }
@@ -171,7 +181,7 @@ contract MockGuardedExecModuleUpgradeableV2 is
     function name() external pure returns (string memory) {
         return "MockGuardedExecModuleUpgradeableV2";
     }
-
+    
     /**
      * @notice Returns the semantic version of the mock module
      * @return Version string
@@ -206,7 +216,7 @@ contract MockGuardedExecModuleUpgradeableV2 is
     function pause() external onlyOwner {
         _pause();
     }
-
+    
     /**
      * @notice Unpause the module
      * @dev Resumes normal operation, allowing executeGuardedBatch calls again.
@@ -232,57 +242,56 @@ contract MockGuardedExecModuleUpgradeableV2 is
      * @dev Permissionless function. All target+selector combinations must be whitelisted.
      *      Executions maintain smart account context (msg.sender = smart account).
      *      All validations occur before execution (checks-effects-interactions pattern).
-     * @param targets Array of target contract addresses
-     * @param calldatas Array of encoded function calls
-     * @param values Array of native ETH values to send with each call
+     * @param executions Array of Execution structs containing target, value, and callData
      */
     function executeGuardedBatch(
-        address[] calldata targets,
-        bytes[] calldata calldatas,
-        uint256[] calldata values
+        Execution[] calldata executions
     )
         external
         whenNotPaused
     {
-        uint256 length = targets.length;
+        uint256 length = executions.length;
         if (length == 0) revert EmptyBatch();
-        if (length != calldatas.length) revert LengthMismatch();
-        if (length != values.length) revert LengthMismatch();
-
-        Execution[] memory executions = new Execution[](length);
+        
+        address[] memory targets = new address[](length);
+        bytes4[] memory selectors = new bytes4[](length);
         GuardedExecModuleStorage storage s = _getGuardedExecModuleStorage();
         TargetRegistry reg = s.registry;
-
+        
         // Single-pass validation and execution array building
         // All validations happen before any execution (security best practice)
         for (uint256 i = 0; i < length;) {
-            bytes calldata currentCalldata = calldatas[i];
-            address currentTarget = targets[i];
-            uint256 currentValue = values[i];
-
+            Execution calldata execution = executions[i];
+            address target = execution.target;
+            bytes calldata callData = execution.callData;
+            uint256 callDataLength = callData.length;
+            
             // Extract selector from calldata (first 4 bytes)
-            if (currentCalldata.length < MIN_SELECTOR_LENGTH) revert InvalidCalldata();
-            bytes4 selector = bytes4(currentCalldata[:4]);
-
+            if (callDataLength < MIN_SELECTOR_LENGTH) revert InvalidCalldata();
+            bytes4 selector = bytes4(callData[:4]);
+            selectors[i] = selector;
+            targets[i] = target;
+            
             // Security check 1: Verify target+selector is whitelisted
-            if (!reg.isWhitelisted(currentTarget, selector)) {
-                revert TargetSelectorNotWhitelisted(currentTarget, selector);
+            // Using auto-generated getter from public mapping to avoid duplicate bytecode
+            if (!reg.whitelist(target, selector)) {
+                revert TargetSelectorNotWhitelisted(target, selector);
             }
-
-            // Security check 2: Validate ERC20 transfer authorization if this is a transfer
+            
+            // Security check 2 & 3: Validate ERC20 transfer/approve authorization
+            // Most common case (non-transfer, non-approve) skips these checks entirely
+            // Using else-if to avoid checking both conditions when first matches
             if (selector == TRANSFER_SELECTOR) {
-                _validateERC20Transfer(currentTarget, currentCalldata, reg);
+                _validateERC20Transfer(target, callData, callDataLength, reg);
+            } else if (selector == APPROVE_SELECTOR) {
+                _validateERC20Approve(target, callData, callDataLength, reg);
             }
-
-            // Build execution after all validations pass
-            executions[i] =
-                Execution({ target: currentTarget, value: currentValue, callData: currentCalldata });
-
+            
             unchecked {
                 ++i;
             }
         }
-
+        
         // Execute batch via smart account (maintains msg.sender = smart account)
         _execute(executions);
     }
@@ -331,25 +340,59 @@ contract MockGuardedExecModuleUpgradeableV2 is
      *      Recipient must be: smart wallet itself, wallet owner, or explicitly authorized.
      * @param token The ERC20 token address
      * @param callData The encoded transfer(address to, uint256 amount) call data
+     * @param callDataLength The length of callData (cached to avoid repeated calldata loads)
      * @param reg The cached registry instance for authorization check
      */
     function _validateERC20Transfer(
         address token,
         bytes calldata callData,
+        uint256 callDataLength,
         TargetRegistry reg
     )
         internal
         view
     {
         // Standard ERC20 transfer must be exactly 68 bytes: 4 (selector) + 32 (to) + 32 (amount)
-        if (callData.length != MIN_TRANSFER_LENGTH) revert InvalidCalldata();
-
-        // Extract recipient address from calldata (bytes 4-35)
-        address to = abi.decode(callData[4:36], (address));
+        if (callDataLength != MIN_TRANSFER_LENGTH) revert InvalidCalldata();
+        
+        // Extract recipient address from calldata (bytes 16-35, ignoring 12-byte padding)
+        address to = address(bytes20(callData[16:36]));
 
         // Check if recipient is authorized (wallet itself, owner, or explicitly authorized)
         if (!reg.isERC20TransferAuthorized(token, to, msg.sender)) {
             revert UnauthorizedERC20Transfer(token, to);
+        }
+    }
+
+    /**
+     * @notice Validate ERC20 approve authorization
+     * @dev Validates calldata format and checks if approve spender is whitelisted.
+     *      Spender must be a whitelisted target address in the registry (trusted DeFi contract).
+     * @param token The ERC20 token address
+     * @param callData The encoded approve(address spender, uint256 amount) call data
+     * @param callDataLength The length of callData (cached to avoid repeated calldata loads)
+     * @param reg The cached registry instance for authorization check
+     */
+    function _validateERC20Approve(
+        address token,
+        bytes calldata callData,
+        uint256 callDataLength,
+        TargetRegistry reg
+    )
+        internal
+        view
+    {
+        // Standard ERC20 approve must be exactly 68 bytes: 4 (selector) + 32 (spender) + 32 (amount)
+        if (callDataLength != MIN_TRANSFER_LENGTH) revert InvalidCalldata();
+
+        // Extract spender address from calldata (bytes 16-35, ignoring 12-byte padding)
+        address spender = address(bytes20(callData[16:36]));
+
+        // Check if spender is whitelisted as a target address (trusted contract)
+        // Spender must be in the whitelistedTargets mapping (has at least one selector whitelisted)
+        // Using auto-generated getter from public mapping to avoid duplicate bytecode
+        if (!reg.whitelistedTargets(spender)) {
+            revert UnauthorizedERC20Approve(token, spender);
         }
     }
 }
