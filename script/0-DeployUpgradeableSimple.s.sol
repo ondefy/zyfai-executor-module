@@ -10,7 +10,7 @@ contract DeployUpgradeableSimple is Script {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         vm.startBroadcast(deployerPrivateKey);
 
-        address registryAddress = 0x0B57fDCE1962B467ef4bCBAEb10a5F7134F38637;
+        address registryAddress = 0xd5C2dFD6d34c2bEA1dbec14DE4780d4A9D45ea17;
         address deployer = vm.addr(deployerPrivateKey);
 
         console.log("Deploying GuardedExecModuleUpgradeable...");

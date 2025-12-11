@@ -204,8 +204,8 @@ async function main() {
       }
     }
     
-    // Get function selector for approve(address,uint256)
-    // Create selector for executeGuardedBatch(address[],bytes[],uint256[])
+    // Get function selector for executeGuardedBatch(Execution[] calldata executions)
+    // Execution struct: { address target; uint256 value; bytes callData; }
     const executeGuardedBatchSelector = toFunctionSelector(
       getAbiItem({
         abi: [
@@ -213,9 +213,15 @@ async function main() {
             name: "executeGuardedBatch",
             type: "function",
             inputs: [
-              { name: "targets", type: "address[]" },
-              { name: "calldatas", type: "bytes[]" },
-              { name: "values", type: "uint256[]" }
+              {
+                name: "executions",
+                type: "tuple[]",
+                components: [
+                  { name: "target", type: "address" },
+                  { name: "value", type: "uint256" },
+                  { name: "callData", type: "bytes" }
+                ]
+              }
             ],
             outputs: [],
             stateMutability: "nonpayable"
@@ -319,12 +325,20 @@ async function main() {
     });
 
     // GuardedExecModuleUpgradeable ABI for executeGuardedBatch
+    // Execution struct: { address target; uint256 value; bytes callData; }
     const guardedExecModuleAbi = [
       {
         "inputs": [
-          { "internalType": "address[]", "name": "targets", "type": "address[]" },
-          { "internalType": "bytes[]", "name": "calldatas", "type": "bytes[]" },
-          { "internalType": "uint256[]", "name": "values", "type": "uint256[]" }
+          {
+            "internalType": "tuple[]",
+            "name": "executions",
+            "type": "tuple[]",
+            "components": [
+              { "internalType": "address", "name": "target", "type": "address" },
+              { "internalType": "uint256", "name": "value", "type": "uint256" },
+              { "internalType": "bytes", "name": "callData", "type": "bytes" }
+            ]
+          }
         ],
         "name": "executeGuardedBatch",
         "outputs": [],
@@ -422,21 +436,25 @@ async function main() {
       ]
     });
 
-    // Prepare data for executeGuardedBatch (USDC approve, AAVE supply)
+    // Prepare data for executeGuardedBatch using Execution[] struct
+    // Execution struct: { address target; uint256 value; bytes callData; }
+    const executions = [
+      {
+        target: USDC_ADDRESS,
+        value: BigInt(0),
+        callData: approveData,
+      },
+      {
+        target: AAVE_POOL_ADDRESS,
+        value: BigInt(0),
+        callData: supplyData,
+      },
+    ];
+
     const guardedExecCallData = encodeFunctionData({
       abi: guardedExecModuleAbi,
       functionName: 'executeGuardedBatch',
-      args: [
-        // Targets: USDC (approve), AAVE (supply)
-        // [USDC_ADDRESS, AAVE_POOL_ADDRESS],
-        [USDC_ADDRESS],
-        // Calldatas must match targets above
-        // [approveData, supplyData],
-        [transferData],
-        // Values: both 0 for ERC20 operations
-        // [BigInt(0), BigInt(0)],
-        [BigInt(0)],
-      ]
+      args: [executions]
     });
 
     // @ts-ignore - Type compatibility

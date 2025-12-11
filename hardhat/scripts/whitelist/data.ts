@@ -185,248 +185,248 @@ export const whitelistConfig: WhitelistItem[] = [
     description: "AAVE Pool USDC - withdraw()",
   },
   
-  // ========================================
-  // FLUID POOL FUNCTIONS
-  // ========================================
-  {
-    target: FLUID_POOLS.USDC,
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Fluid Pool USDC - deposit()",
-  },
-  {
-    target: FLUID_POOLS.USDC,
-    selector: SELECTORS.ERC4626_WITHDRAW,
-    description: "Fluid Pool USDC - withdraw()",
-  },
-  
-  // ========================================
-  // SPARK POOL FUNCTIONS
-  // ========================================
-  {
-    target: SPARK_POOLS.USDC,
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Spark Pool USDC - deposit()",
-  },
-  {
-    target: SPARK_POOLS.USDC,
-    selector: SELECTORS.ERC4626_WITHDRAW,
-    description: "Spark Pool USDC - withdraw()",
-  },
-  
-  // ========================================
-  // WASABI POOL FUNCTIONS
-  // ========================================
-  {
-    target: WASABI_POOLS.USDC,
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Wasabi Pool USDC - deposit()",
-  },
-  {
-    target: WASABI_POOLS.USDC,
-    selector: SELECTORS.ERC4626_WITHDRAW,
-    description: "Wasabi Pool USDC - withdraw()",
-  },
-  
-  // ========================================
-  // COMPOUND V3 POOL FUNCTIONS
-  // ========================================
-  {
-    target: COMPOUND_V3_POOLS.USDC,
-    selector: SELECTORS.COMPOUND_V3_SUPPLY,
-    description: "Compound V3 Pool USDC - supply()",
-  },
-  {
-    target: COMPOUND_V3_POOLS.USDC,
-    selector: SELECTORS.COMPOUND_V3_WITHDRAW,
-    description: "Compound V3 Pool USDC - withdraw()",
-  },
-  
-  // ========================================
-  // MOONWELL POOL FUNCTIONS
-  // ========================================
-  {
-    target: MOONWELL_POOLS.USDC,
-    selector: SELECTORS.MOONWELL_MINT,
-    description: "Moonwell Pool USDC - mint()",
-  },
-  {
-    target: MOONWELL_POOLS.USDC,
-    selector: SELECTORS.MOONWELL_REDEEM,
-    description: "Moonwell Pool USDC - redeem()",
-  },
-  
-  // ========================================
-  // HARVEST POOL FUNCTIONS
-  // ========================================
-  // USDC - Moonwell (uses standard ERC4626 deposit/withdraw)
-  {
-    target: HARVEST_POOLS['USDC - Moonwell'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Harvest USDC - Moonwell - deposit()",
-  },
-  {
-    target: HARVEST_POOLS['USDC - Moonwell'],
-    selector: SELECTORS.ERC4626_WITHDRAW,
-    description: "Harvest USDC - Moonwell - withdraw()",
-  },
-  
-  // USDC - 40 Acres (uses standard ERC4626 deposit/withdraw)
-  {
-    target: HARVEST_POOLS['USDC - 40 Acres'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Harvest USDC - 40 Acres - deposit()",
-  },
-  {
-    target: HARVEST_POOLS['USDC - 40 Acres'],
-    selector: SELECTORS.ERC4626_WITHDRAW,
-    description: "Harvest USDC - 40 Acres - withdraw()",
-  },
-  
-  // USDC - Autopilot (uses deposit/redeem pattern)
-  {
-    target: HARVEST_POOLS['USDC - Autopilot'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Harvest USDC - Autopilot - deposit()",
-  },
-  {
-    target: HARVEST_POOLS['USDC - Autopilot'],
-    selector: SELECTORS.REDEEM,
-    description: "Harvest USDC - Autopilot - redeem()",
-  },
-  
-  // ========================================
-  // MORPHO POOL FUNCTIONS
-  // ========================================
-  // Universal - USDC
-  {
-    target: MORPHO_POOLS['Universal - USDC'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho Universal - USDC - deposit()",
-  },
-  {
-    target: MORPHO_POOLS['Universal - USDC'],
-    selector: SELECTORS.ERC4626_WITHDRAW,
-    description: "Morpho Universal - USDC - withdraw()",
-  },
-  
-  // Seamless USDC Vault
-  {
-    target: MORPHO_POOLS['Seamless USDC Vault'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho Seamless USDC Vault - deposit()",
-  },
-  {
-    target: MORPHO_POOLS['Seamless USDC Vault'],
-    selector: SELECTORS.ERC4626_WITHDRAW,
-    description: "Morpho Seamless USDC Vault - withdraw()",
-  },
-  
-  // Moonwell Flagship USDC
-  {
-    target: MORPHO_POOLS['Moonwell Flagship USDC'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho Moonwell Flagship USDC - deposit()",
-  },
-  {
-    target: MORPHO_POOLS['Moonwell Flagship USDC'],
-    selector: SELECTORS.ERC4626_WITHDRAW,
-    description: "Morpho Moonwell Flagship USDC - withdraw()",
-  },
-  
-  // HighYield Clearstar USDC
-  {
-    target: MORPHO_POOLS['HighYield Clearstar USDC'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho HighYield Clearstar USDC - deposit()",
-  },
-  {
-    target: MORPHO_POOLS['HighYield Clearstar USDC'],
-    selector: SELECTORS.ERC4626_WITHDRAW,
-    description: "Morpho HighYield Clearstar USDC - withdraw()",
-  },
-  
-  // Clearstar Reactor OpenEden Boosted USDC
-  {
-    target: MORPHO_POOLS['Clearstar Reactor OpenEden Boosted USDC'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho Clearstar Reactor OpenEden Boosted USDC - deposit()",
-  },
-  {
-    target: MORPHO_POOLS['Clearstar Reactor OpenEden Boosted USDC'],
-    selector: SELECTORS.ERC4626_WITHDRAW,
-    description: "Morpho Clearstar Reactor OpenEden Boosted USDC - withdraw()",
-  },
-  
-  // Gauntlet USDC Prime
-  {
-    target: MORPHO_POOLS['Gauntlet USDC Prime'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho Gauntlet USDC Prime - deposit()",
-  },
-  {
-    target: MORPHO_POOLS['Gauntlet USDC Prime'],
-    selector: SELECTORS.ERC4626_WITHDRAW,
-    description: "Morpho Gauntlet USDC Prime - withdraw()",
-  },
-  
-  // Gauntlet USDC Core
-  {
-    target: MORPHO_POOLS['Gauntlet USDC Core'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho Gauntlet USDC Core - deposit()",
-  },
-  {
-    target: MORPHO_POOLS['Gauntlet USDC Core'],
-    selector: SELECTORS.ERC4626_WITHDRAW,
-    description: "Morpho Gauntlet USDC Core - withdraw()",
-  },
-  
-  // Gauntlet USDC Frontier
-  {
-    target: MORPHO_POOLS['Gauntlet USDC Frontier'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho Gauntlet USDC Frontier - deposit()",
-  },
-  {
-    target: MORPHO_POOLS['Gauntlet USDC Frontier'],
-    selector: SELECTORS.ERC4626_WITHDRAW,
-    description: "Morpho Gauntlet USDC Frontier - withdraw()",
-  },
-  
-  // ExtrafiXLend USDC
-  {
-    target: MORPHO_POOLS['ExtrafiXLend USDC'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho ExtrafiXLend USDC - deposit()",
-  },
-  {
-    target: MORPHO_POOLS['ExtrafiXLend USDC'],
-    selector: SELECTORS.ERC4626_WITHDRAW,
-    description: "Morpho ExtrafiXLend USDC - withdraw()",
-  },
-  
-  // Steakhouse USDC
-  {
-    target: MORPHO_POOLS['Steakhouse USDC'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho Steakhouse USDC - deposit()",
-  },
-  {
-    target: MORPHO_POOLS['Steakhouse USDC'],
-    selector: SELECTORS.ERC4626_WITHDRAW,
-    description: "Morpho Steakhouse USDC - withdraw()",
-  },
-  
-  // ========================================
-  // ADD YOUR NEW WHITELIST ITEMS BELOW
-  // ========================================
-  
-  // Example format:
+  // // ========================================
+  // // FLUID POOL FUNCTIONS
+  // // ========================================
   // {
-  //   target: SPARK_POOLS.USDC or FLUID_POOLS.USDC or MORPHO_POOLS['Pool Name'] or AAVE_POOLS.USDC or TOKENS.USDC,
-  //   selector: SELECTORS.ERC4626_DEPOSIT or SELECTORS.AAVE_SUPPLY etc.,
-  //   description: "Descriptive name",
+  //   target: FLUID_POOLS.USDC,
+  //   selector: SELECTORS.ERC4626_DEPOSIT,
+  //   description: "Fluid Pool USDC - deposit()",
   // },
+  // {
+  //   target: FLUID_POOLS.USDC,
+  //   selector: SELECTORS.ERC4626_WITHDRAW,
+  //   description: "Fluid Pool USDC - withdraw()",
+  // },
+  
+  // // ========================================
+  // // SPARK POOL FUNCTIONS
+  // // ========================================
+  // {
+  //   target: SPARK_POOLS.USDC,
+  //   selector: SELECTORS.ERC4626_DEPOSIT,
+  //   description: "Spark Pool USDC - deposit()",
+  // },
+  // {
+  //   target: SPARK_POOLS.USDC,
+  //   selector: SELECTORS.ERC4626_WITHDRAW,
+  //   description: "Spark Pool USDC - withdraw()",
+  // },
+  
+  // // ========================================
+  // // WASABI POOL FUNCTIONS
+  // // ========================================
+  // {
+  //   target: WASABI_POOLS.USDC,
+  //   selector: SELECTORS.ERC4626_DEPOSIT,
+  //   description: "Wasabi Pool USDC - deposit()",
+  // },
+  // {
+  //   target: WASABI_POOLS.USDC,
+  //   selector: SELECTORS.ERC4626_WITHDRAW,
+  //   description: "Wasabi Pool USDC - withdraw()",
+  // },
+  
+  // // ========================================
+  // // COMPOUND V3 POOL FUNCTIONS
+  // // ========================================
+  // {
+  //   target: COMPOUND_V3_POOLS.USDC,
+  //   selector: SELECTORS.COMPOUND_V3_SUPPLY,
+  //   description: "Compound V3 Pool USDC - supply()",
+  // },
+  // {
+  //   target: COMPOUND_V3_POOLS.USDC,
+  //   selector: SELECTORS.COMPOUND_V3_WITHDRAW,
+  //   description: "Compound V3 Pool USDC - withdraw()",
+  // },
+  
+  // // ========================================
+  // // MOONWELL POOL FUNCTIONS
+  // // ========================================
+  // {
+  //   target: MOONWELL_POOLS.USDC,
+  //   selector: SELECTORS.MOONWELL_MINT,
+  //   description: "Moonwell Pool USDC - mint()",
+  // },
+  // {
+  //   target: MOONWELL_POOLS.USDC,
+  //   selector: SELECTORS.MOONWELL_REDEEM,
+  //   description: "Moonwell Pool USDC - redeem()",
+  // },
+  
+  // // ========================================
+  // // HARVEST POOL FUNCTIONS
+  // // ========================================
+  // // USDC - Moonwell (uses standard ERC4626 deposit/withdraw)
+  // {
+  //   target: HARVEST_POOLS['USDC - Moonwell'],
+  //   selector: SELECTORS.ERC4626_DEPOSIT,
+  //   description: "Harvest USDC - Moonwell - deposit()",
+  // },
+  // {
+  //   target: HARVEST_POOLS['USDC - Moonwell'],
+  //   selector: SELECTORS.ERC4626_WITHDRAW,
+  //   description: "Harvest USDC - Moonwell - withdraw()",
+  // },
+  
+  // // USDC - 40 Acres (uses standard ERC4626 deposit/withdraw)
+  // {
+  //   target: HARVEST_POOLS['USDC - 40 Acres'],
+  //   selector: SELECTORS.ERC4626_DEPOSIT,
+  //   description: "Harvest USDC - 40 Acres - deposit()",
+  // },
+  // {
+  //   target: HARVEST_POOLS['USDC - 40 Acres'],
+  //   selector: SELECTORS.ERC4626_WITHDRAW,
+  //   description: "Harvest USDC - 40 Acres - withdraw()",
+  // },
+  
+  // // USDC - Autopilot (uses deposit/redeem pattern)
+  // {
+  //   target: HARVEST_POOLS['USDC - Autopilot'],
+  //   selector: SELECTORS.ERC4626_DEPOSIT,
+  //   description: "Harvest USDC - Autopilot - deposit()",
+  // },
+  // {
+  //   target: HARVEST_POOLS['USDC - Autopilot'],
+  //   selector: SELECTORS.REDEEM,
+  //   description: "Harvest USDC - Autopilot - redeem()",
+  // },
+  
+  // // ========================================
+  // // MORPHO POOL FUNCTIONS
+  // // ========================================
+  // // Universal - USDC
+  // {
+  //   target: MORPHO_POOLS['Universal - USDC'],
+  //   selector: SELECTORS.ERC4626_DEPOSIT,
+  //   description: "Morpho Universal - USDC - deposit()",
+  // },
+  // {
+  //   target: MORPHO_POOLS['Universal - USDC'],
+  //   selector: SELECTORS.ERC4626_WITHDRAW,
+  //   description: "Morpho Universal - USDC - withdraw()",
+  // },
+  
+  // // Seamless USDC Vault
+  // {
+  //   target: MORPHO_POOLS['Seamless USDC Vault'],
+  //   selector: SELECTORS.ERC4626_DEPOSIT,
+  //   description: "Morpho Seamless USDC Vault - deposit()",
+  // },
+  // {
+  //   target: MORPHO_POOLS['Seamless USDC Vault'],
+  //   selector: SELECTORS.ERC4626_WITHDRAW,
+  //   description: "Morpho Seamless USDC Vault - withdraw()",
+  // },
+  
+  // // Moonwell Flagship USDC
+  // {
+  //   target: MORPHO_POOLS['Moonwell Flagship USDC'],
+  //   selector: SELECTORS.ERC4626_DEPOSIT,
+  //   description: "Morpho Moonwell Flagship USDC - deposit()",
+  // },
+  // {
+  //   target: MORPHO_POOLS['Moonwell Flagship USDC'],
+  //   selector: SELECTORS.ERC4626_WITHDRAW,
+  //   description: "Morpho Moonwell Flagship USDC - withdraw()",
+  // },
+  
+  // // HighYield Clearstar USDC
+  // {
+  //   target: MORPHO_POOLS['HighYield Clearstar USDC'],
+  //   selector: SELECTORS.ERC4626_DEPOSIT,
+  //   description: "Morpho HighYield Clearstar USDC - deposit()",
+  // },
+  // {
+  //   target: MORPHO_POOLS['HighYield Clearstar USDC'],
+  //   selector: SELECTORS.ERC4626_WITHDRAW,
+  //   description: "Morpho HighYield Clearstar USDC - withdraw()",
+  // },
+  
+  // // Clearstar Reactor OpenEden Boosted USDC
+  // {
+  //   target: MORPHO_POOLS['Clearstar Reactor OpenEden Boosted USDC'],
+  //   selector: SELECTORS.ERC4626_DEPOSIT,
+  //   description: "Morpho Clearstar Reactor OpenEden Boosted USDC - deposit()",
+  // },
+  // {
+  //   target: MORPHO_POOLS['Clearstar Reactor OpenEden Boosted USDC'],
+  //   selector: SELECTORS.ERC4626_WITHDRAW,
+  //   description: "Morpho Clearstar Reactor OpenEden Boosted USDC - withdraw()",
+  // },
+  
+  // // Gauntlet USDC Prime
+  // {
+  //   target: MORPHO_POOLS['Gauntlet USDC Prime'],
+  //   selector: SELECTORS.ERC4626_DEPOSIT,
+  //   description: "Morpho Gauntlet USDC Prime - deposit()",
+  // },
+  // {
+  //   target: MORPHO_POOLS['Gauntlet USDC Prime'],
+  //   selector: SELECTORS.ERC4626_WITHDRAW,
+  //   description: "Morpho Gauntlet USDC Prime - withdraw()",
+  // },
+  
+  // // Gauntlet USDC Core
+  // {
+  //   target: MORPHO_POOLS['Gauntlet USDC Core'],
+  //   selector: SELECTORS.ERC4626_DEPOSIT,
+  //   description: "Morpho Gauntlet USDC Core - deposit()",
+  // },
+  // {
+  //   target: MORPHO_POOLS['Gauntlet USDC Core'],
+  //   selector: SELECTORS.ERC4626_WITHDRAW,
+  //   description: "Morpho Gauntlet USDC Core - withdraw()",
+  // },
+  
+  // // Gauntlet USDC Frontier
+  // {
+  //   target: MORPHO_POOLS['Gauntlet USDC Frontier'],
+  //   selector: SELECTORS.ERC4626_DEPOSIT,
+  //   description: "Morpho Gauntlet USDC Frontier - deposit()",
+  // },
+  // {
+  //   target: MORPHO_POOLS['Gauntlet USDC Frontier'],
+  //   selector: SELECTORS.ERC4626_WITHDRAW,
+  //   description: "Morpho Gauntlet USDC Frontier - withdraw()",
+  // },
+  
+  // // ExtrafiXLend USDC
+  // {
+  //   target: MORPHO_POOLS['ExtrafiXLend USDC'],
+  //   selector: SELECTORS.ERC4626_DEPOSIT,
+  //   description: "Morpho ExtrafiXLend USDC - deposit()",
+  // },
+  // {
+  //   target: MORPHO_POOLS['ExtrafiXLend USDC'],
+  //   selector: SELECTORS.ERC4626_WITHDRAW,
+  //   description: "Morpho ExtrafiXLend USDC - withdraw()",
+  // },
+  
+  // // Steakhouse USDC
+  // {
+  //   target: MORPHO_POOLS['Steakhouse USDC'],
+  //   selector: SELECTORS.ERC4626_DEPOSIT,
+  //   description: "Morpho Steakhouse USDC - deposit()",
+  // },
+  // {
+  //   target: MORPHO_POOLS['Steakhouse USDC'],
+  //   selector: SELECTORS.ERC4626_WITHDRAW,
+  //   description: "Morpho Steakhouse USDC - withdraw()",
+  // },
+  
+  // // ========================================
+  // // ADD YOUR NEW WHITELIST ITEMS BELOW
+  // // ========================================
+  
+  // // Example format:
+  // // {
+  // //   target: SPARK_POOLS.USDC or FLUID_POOLS.USDC or MORPHO_POOLS['Pool Name'] or AAVE_POOLS.USDC or TOKENS.USDC,
+  // //   selector: SELECTORS.ERC4626_DEPOSIT or SELECTORS.AAVE_SUPPLY etc.,
+  // //   description: "Descriptive name",
+  // // },
 ];
 
 /**
