@@ -34,7 +34,7 @@ contract MockDeFiPool {
      * @param amount The amount withdrawn
      */
     event Withdraw(address indexed caller, uint256 amount);
-
+    
     /*//////////////////////////////////////////////////////////////
                                STORAGE
     //////////////////////////////////////////////////////////////*/
@@ -50,7 +50,7 @@ contract MockDeFiPool {
      * @dev Used to verify functions were called the expected number of times
      */
     uint256 public callCount;
-
+    
     /**
      * @notice Mock swap function
      * @dev Records msg.sender to verify it's the smart account.
@@ -62,10 +62,10 @@ contract MockDeFiPool {
     function swap(uint256 amountIn, uint256) external payable returns (uint256 amountOut) {
         lastCaller = msg.sender;
         callCount++;
-
+        
         // Mock swap logic - just return 90% of input as output
         amountOut = (amountIn * 90) / 100;
-
+        
         emit Swap(msg.sender, amountIn, amountOut);
         return amountOut;
     }
@@ -73,7 +73,7 @@ contract MockDeFiPool {
     /*//////////////////////////////////////////////////////////////
                           EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-
+    
     /**
      * @notice Mock deposit function
      * @dev Records msg.sender to verify smart account context
@@ -84,7 +84,7 @@ contract MockDeFiPool {
         callCount++;
         emit Deposit(msg.sender, amount);
     }
-
+    
     /**
      * @notice Mock withdraw function
      * @dev Records msg.sender to verify smart account context
@@ -97,7 +97,7 @@ contract MockDeFiPool {
         emit Withdraw(msg.sender, amount);
         return true;
     }
-
+    
     /**
      * @notice Function that always reverts (for testing error handling)
      * @dev Used to test error propagation in batch operations
@@ -105,7 +105,7 @@ contract MockDeFiPool {
     function failingFunction() external pure {
         revert("Intentional failure");
     }
-
+    
     /**
      * @notice Get information about the last function call
      * @dev Returns the last caller and total call count for test verification

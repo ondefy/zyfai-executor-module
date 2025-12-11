@@ -21,7 +21,7 @@ contract TargetRegistry is Ownable2Step, Pausable {
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
     //////////////////////////////////////////////////////////////*/
-
+    
     /**
      * @notice Whitelist mapping: target address => function selector => is whitelisted
      * @dev Stores whether target+selector combinations are whitelisted. Only owner can modify.
@@ -30,7 +30,7 @@ contract TargetRegistry is Ownable2Step, Pausable {
      *      router is allowed to be called by session keys via the executor module.
      */
     mapping(address => mapping(bytes4 => bool)) public whitelist;
-
+    
     /**
      * @notice Counter for number of whitelisted selectors per target address
      * @dev Tracks how many selectors are whitelisted for each target. Used to efficiently
@@ -46,7 +46,7 @@ contract TargetRegistry is Ownable2Step, Pausable {
      *      Updated automatically when selectors are added/removed.
      */
     mapping(address => bool) public whitelistedTargets;
-
+    
     /**
      * @notice Mapping of authorized ERC20 token recipients: token => recipient => is allowed
      * @dev Controls which addresses can receive ERC20 tokens. Transfers allowed to: wallet itself,
@@ -57,7 +57,7 @@ contract TargetRegistry is Ownable2Step, Pausable {
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
-
+    
     /**
      * @notice Emitted when a target+selector combination is added to the whitelist
      * @param target The target contract address that was whitelisted
@@ -85,7 +85,7 @@ contract TargetRegistry is Ownable2Step, Pausable {
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
     //////////////////////////////////////////////////////////////*/
-
+    
     /// @notice Thrown when target address is zero address
     error InvalidTarget();
 
@@ -118,7 +118,7 @@ contract TargetRegistry is Ownable2Step, Pausable {
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
-
+    
     /**
      * @notice Initialize registry
      * @param admin The address that will own this contract (should be multisig for production)
@@ -128,7 +128,7 @@ contract TargetRegistry is Ownable2Step, Pausable {
     /*//////////////////////////////////////////////////////////////
                           EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-
+    
     /**
      * @notice Pause the registry (emergency stop)
      * @dev Blocks addToWhitelist and removeFromWhitelist when paused.
@@ -136,7 +136,7 @@ contract TargetRegistry is Ownable2Step, Pausable {
     function pause() external onlyOwner {
         _pause();
     }
-
+    
     /**
      * @notice Unpause the registry
      * @dev Resumes normal operation, allowing whitelist modifications again.
@@ -196,7 +196,7 @@ contract TargetRegistry is Ownable2Step, Pausable {
             }
         }
     }
-
+    
     /**
      * @notice Add authorized recipient(s) for a specific ERC20 token (batch operation)
      * @dev Owner only. Immediate operation. Reverts if contract is paused. Authorizes recipients for ERC20
@@ -220,7 +220,7 @@ contract TargetRegistry is Ownable2Step, Pausable {
             }
         }
     }
-
+    
     /**
      * @notice Remove authorized recipient(s) for a specific ERC20 token (batch operation)
      * @dev Owner only. Immediate operation. Reverts if contract is paused. Removes recipient authorization.
@@ -243,7 +243,7 @@ contract TargetRegistry is Ownable2Step, Pausable {
             }
         }
     }
-
+    
     /**
      * @notice Check if an ERC20 transfer to a specific recipient is authorized
      * @dev Called by GuardedExecModule. Authorized if recipient is: explicitly authorized, wallet
@@ -264,7 +264,7 @@ contract TargetRegistry is Ownable2Step, Pausable {
     {
         return _isAuthorizedRecipient(to, smartWallet, token);
     }
-
+    
     /*//////////////////////////////////////////////////////////////
                           INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -332,11 +332,11 @@ contract TargetRegistry is Ownable2Step, Pausable {
         if (token == address(0)) revert InvalidERC20Token();
         if (recipient == address(0)) revert InvalidRecipient();
         if (allowedERC20TokenRecipients[token][recipient]) revert AlreadyWhitelisted();
-
+        
         allowedERC20TokenRecipients[token][recipient] = true;
         emit ERC20TokenRecipientAuthorized(token, recipient, true);
     }
-
+    
     /**
      * @notice Internal function to remove authorized recipient for ERC20 token
      * @dev Validates inputs and removes recipient authorization. Called by
@@ -348,16 +348,16 @@ contract TargetRegistry is Ownable2Step, Pausable {
         if (token == address(0)) revert InvalidERC20Token();
         if (recipient == address(0)) revert InvalidRecipient();
         if (!allowedERC20TokenRecipients[token][recipient]) revert NotWhitelisted();
-
+        
         allowedERC20TokenRecipients[token][recipient] = false;
         emit ERC20TokenRecipientAuthorized(token, recipient, false);
     }
-
+    
     /**
      * @notice Internal function to check if recipient is authorized for ERC20 transfers
      * @dev Checks authorization: explicitly authorized recipient, smart wallet itself, or wallet
      * owner.
-     *      Checks ordered from cheapest to most expensive (storage read < address comparison <
+     *      Checks ordered from cheapest to most expensive (address comparison < storage read <
      * external call).
      * @param to The recipient address
      * @param smartWallet The smart wallet address
@@ -365,7 +365,7 @@ contract TargetRegistry is Ownable2Step, Pausable {
      * @return True if recipient is authorized
      */
     function _isAuthorizedRecipient(
-        address to,
+        address to, 
         address smartWallet,
         address token
     )
@@ -374,46 +374,18 @@ contract TargetRegistry is Ownable2Step, Pausable {
         virtual
         returns (bool)
     {
-        if (allowedERC20TokenRecipients[token][to]) return true;
+        // NOTE: return early without sload (cheapest check first)
         if (to == smartWallet) return true;
+        
+        // Storage read (cheaper than external call)
+        if (allowedERC20TokenRecipients[token][to]) return true;
 
-        try ISafeWallet(smartWallet).getOwners() returns (address[] memory owners) {
-            uint256 length = owners.length;
-            for (uint256 i = 0; i < length;) {
-                if (owners[i] == to) return true;
-                unchecked {
-                    ++i;
-                }
-            }
+        // NOTE: could be replaced with isOwner (single SLOAD vs multiple SLOADs + memory allocation)
+        try ISafeWallet(smartWallet).isOwner(to) returns (bool isOwner) {
+            if (isOwner) return true;
         } catch { }
-
+        
         return false;
     }
 
-    /*//////////////////////////////////////////////////////////////
-                            VIEW FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    /**
-     * @notice Check if a target+selector combination is whitelisted
-     * @dev Used by GuardedExecModule to verify if target+selector is allowed to be called by
-     * session keys.
-     * @param target The contract address
-     * @param selector The function selector
-     * @return True if whitelisted
-     */
-    function isWhitelisted(address target, bytes4 selector) external view returns (bool) {
-        return whitelist[target][selector];
-    }
-
-    /**
-     * @notice Check if a target address has any whitelisted selector
-     * @dev Used to verify if an address is a whitelisted target contract (for approve validation).
-     *      Returns true if the target has at least one whitelisted selector, indicating it's a trusted contract.
-     * @param target The contract address to check
-     * @return True if the target is whitelisted (has at least one whitelisted selector)
-     */
-    function isWhitelistedTarget(address target) external view returns (bool) {
-        return whitelistedTargets[target];
-    }
 }

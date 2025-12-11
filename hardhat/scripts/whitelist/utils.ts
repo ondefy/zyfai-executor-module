@@ -22,9 +22,9 @@ export const TARGET_REGISTRY_ABI = parseAbi([
   // Batch whitelist operations
   "function addToWhitelist(address[] calldata targets, bytes4[] calldata selectors) external",
   "function removeFromWhitelist(address[] calldata targets, bytes4[] calldata selectors) external",
-  // View functions
-  "function isWhitelisted(address target, bytes4 selector) external view returns (bool)",
-  "function isWhitelistedTarget(address target) external view returns (bool)",
+  // Public mapping getters (auto-generated from public mappings)
+  "function whitelist(address target, bytes4 selector) external view returns (bool)",
+  "function whitelistedTargets(address target) external view returns (bool)",
   // Events
   "event TargetSelectorAdded(address indexed target, bytes4 indexed selector)",
   "event TargetSelectorRemoved(address indexed target, bytes4 indexed selector)",
@@ -92,10 +92,11 @@ export async function checkWhitelistStatus(
     items.map(async (item) => {
       // Ensure address is properly checksummed (EIP-55)
       const checksummedTarget = getAddress(item.target);
+      // Use public mapping getter instead of removed isWhitelisted function
       const isWhitelisted = await publicClient.readContract({
         address: registryAddress,
         abi: TARGET_REGISTRY_ABI,
-        functionName: 'isWhitelisted',
+        functionName: 'whitelist',
         args: [checksummedTarget, item.selector],
       });
       return { item, isWhitelisted };
