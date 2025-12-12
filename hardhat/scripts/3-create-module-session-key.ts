@@ -385,34 +385,34 @@ async function main() {
     // - asset: USDC address (same as above)
     // - amount: 1 USDC (6 decimals, so 1e6 = 1000000)
     // - to: safeAccount.address
-    // const WITHDRAW_AMOUNT = BigInt(10000); // 1 USDC (6 decimals)
-    // const withdrawData = encodeFunctionData({
-    //   abi: [
-    //     {
-    //       "inputs": [
-    //         { "internalType": "address", "name": "asset", "type": "address" },
-    //         { "internalType": "uint256", "name": "amount", "type": "uint256" },
-    //         { "internalType": "address", "name": "to", "type": "address" }
-    //       ],
-    //       "name": "withdraw",
-    //       "outputs": [],
-    //       "stateMutability": "nonpayable",
-    //       "type": "function"
-    //     }
-    //   ],
-    //   functionName: 'withdraw',
-    //   args: [
-    //     USDC_ADDRESS,
-    //     WITHDRAW_AMOUNT,
-    //     safeAccount.address
-    //   ]
-    // });
+    const WITHDRAW_AMOUNT = BigInt(1000); // 1 USDC (6 decimals)
+    const withdrawData = encodeFunctionData({
+      abi: [
+        {
+          "inputs": [
+            { "internalType": "address", "name": "asset", "type": "address" },
+            { "internalType": "uint256", "name": "amount", "type": "uint256" },
+            { "internalType": "address", "name": "to", "type": "address" }
+          ],
+          "name": "withdraw",
+          "outputs": [],
+          "stateMutability": "nonpayable",
+          "type": "function"
+        }
+      ],
+      functionName: 'withdraw',
+      args: [
+        USDC_ADDRESS,
+        WITHDRAW_AMOUNT,
+        safeAccount.address
+      ]
+    });
 
     // Encode transfer(address recipient,uint256 amount) for USDC
     // Example values:
     // - recipient: safeAccount.address (just as an example, could be another address)
     // - amount: 10000 (1 USDC in 6 decimals)
-    const TRANSFER_AMOUNT = BigInt(1000); // e.g., 0.01 USDC (6 decimals)
+    const TRANSFER_AMOUNT = BigInt(100); // e.g., 0.01 USDC (6 decimals)
     const transferData = encodeFunctionData({
       abi: [
         {
@@ -431,7 +431,7 @@ async function main() {
       functionName: 'transfer',
       args: [
         // "0xbA2aaF97D76dBF4dC9B9779683A22f5Ed4F23BcA", //mmalicious
-        "0xd61C43c089852e0AB68B967dD1eDe03a18e52223",
+        "0xd61C43c089852e0AB68B967dD1eDe03a18e52223", // add your owner
         TRANSFER_AMOUNT
       ]
     });
@@ -449,6 +449,16 @@ async function main() {
         value: BigInt(0),
         callData: supplyData,
       },
+      // {
+      //   target: AAVE_POOL_ADDRESS,
+      //   value: BigInt(0),
+      //   callData: withdrawData,
+      // },
+      // {
+      //   target: USDC_ADDRESS,
+      //   value: BigInt(0),
+      //   callData: transferData,
+      // },
     ];
 
     const guardedExecCallData = encodeFunctionData({
