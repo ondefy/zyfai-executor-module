@@ -5,7 +5,7 @@ import "forge-std/Script.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-import {Create3Factory} from "../src/utils/Create3Factory.sol";
+import {Create3Factory} from "./Create3Factory.sol";
 import {GuardedExecModuleUpgradeable} from "../src/module/GuardedExecModuleUpgradeable.sol";
 
 // Nick's deterministic deployer on most EVM chains

@@ -348,6 +348,30 @@ forge verify-contract <NEW-IMPL-Address> src/module/GuardedExecModuleUpgradeable
 
 # Proxy Verify
 forge verify-contract <NEW-IMPL-Address> lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy --constructor-args 0x000000000000000000000000079c22bbd7b5b91bde24687036d3d3ee2b6c634c00000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000044485cc955000000000000000000000000a0bee327a95f786f5097028ee250c4834dfeb629000000000000000000000000d61c43c089852e0ab68b967dd1ede03a18e5222300000000000000000000000000000000000000000000000000000000 --rpc-url https://base-mainnet.g.alchemy.com/v2/key --chain-id 8453 --compiler-version 0.8.30 --etherscan-api-key etherscan-key
+
+forge verify-contract \
+  0xf8DAAe25b9388762eb24e83324d9f4ec46c000fc \
+  src/module/GuardedExecModuleUpgradeable.sol:GuardedExecModuleUpgradeable \
+  --rpc-url https://arb-mainnet.g.alchemy.com/v2/key \
+  --chain-id 42161 \
+  --compiler-version 0.8.30 \
+  --etherscan-api-key key
+
+# for Arb
+forge verify-contract \
+  0xE350ebB0D0c5365502875f1d2C910bcB58b23424 \
+  lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy \
+  --constructor-args \
+  0x000000000000000000000000f8daae25b9388762eb24e83324d9f4ec46c000fc00000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000 \
+  --rpc-url https://arb-mainnet.g.alchemy.com/v2/key \
+  --chain-id 42161 \
+  --compiler-version 0.8.30 \
+  --etherscan-api-key $ARB_ETHERSCAN_API_KEY
+
+forge script script/DeployWithCREATE3.s.sol:DeployWithCREATE3 \
+  --rpc-url $BASE_RPC \
+  --broadcast \
+  -vvvv
 ```
 
 
