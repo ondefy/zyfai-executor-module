@@ -5,7 +5,7 @@
  */
 
 import { privateKeyToAccount } from 'viem/accounts';
-import { base } from 'viem/chains';
+import { arbitrum, base } from 'viem/chains';
 import { 
   createPublicClient,
   createWalletClient,

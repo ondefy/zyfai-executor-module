@@ -17,7 +17,7 @@
 import { encodeFunctionData, getAddress } from 'viem';
 import dotenv from "dotenv";
 import { join } from "path";
-import { whitelistConfig } from './whitelist/data';
+import { whitelistConfig } from './whitelist/arbdata';
 
 import {
   createClients,

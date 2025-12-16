@@ -38,8 +38,11 @@ const TARGET_REGISTRY_ABI = parseAbi([
  * Edit these values to configure what you want to authorize
  */
 const TOKEN = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as const; // USDC on Base
-const RECIPIENTS = [
-  '0x62be78705295ca9ffdac410b4a9b6101983a7c3b' as const,
+// const TOKEN = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831' as const; // USDC on Arbitrum
+const BASE_RECIPIENTS = [
+  // '0x62be78705295ca9ffdac410b4a9b6101983a7c3b' as const,
+  // '0x23479229e52Ab6aaD312D0B03DF9F33B46753B5e' as const,
+  '0xb98c948CFA24072e58935BC004a8A7b376AE746A' as const,
 ];
 
 async function main() {
@@ -54,12 +57,12 @@ async function main() {
   console.log("  Registry address:", registryAddress);
   console.log("  Account address:", account.address);
   console.log("  Token address:", TOKEN);
-  console.log("  Recipients to process:", RECIPIENTS.length);
+  console.log("  Recipients to process:", BASE_RECIPIENTS.length);
 
   // Check current authorization status
   console.log("\n🔍 Checking current authorization status...");
   const statuses = await Promise.all(
-    RECIPIENTS.map(async (recipient) => {
+    BASE_RECIPIENTS.map(async (recipient) => {
       const checksummedRecipient = getAddress(recipient);
       const isAuthorized = await publicClient.readContract({
         address: registryAddress,

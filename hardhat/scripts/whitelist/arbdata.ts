@@ -20,77 +20,51 @@ import { Address } from 'viem';
  * ERC20 Token Addresses (Base Chain)
  */
 export const TOKENS = {
-  USDC: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as Address,
+  USDC: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831' as Address,
 } as const;
 
 /**
  * AAVE Pool Addresses (Base Chain)
  */
 export const AAVE_POOLS = {
-  USDC: '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5' as Address,
+  USDC: '0x794a61358D6845594F94dc1DB02A252b5b4814aD' as Address,
 } as const;
 
 /**
  * Fluid Pool Addresses (Base Chain)
  */
 export const FLUID_POOLS = {
-  USDC: '0xf42f5795D9ac7e9D757DB633D693cD548Cfd9169' as Address,
+  USDC: '0x1A996cb54bb95462040408C06122D45D6Cdb6096' as Address,
 } as const;
 
 /**
  * Spark Pool Addresses (Base Chain)
  */
 export const SPARK_POOLS = {
-  USDC: '0x3128a0F7f0ea68E7B7c9B00AFa7E41045828e858' as Address,
-} as const;
-
-/**
- * Wasabi Pool Addresses (Base Chain)
- */
-export const WASABI_POOLS = {
-  USDC: '0x1C4a802FD6B591BB71dAA01D8335e43719048B24' as Address,
+  USDC: '0x940098b108fB7D0a7E374f6eDED7760787464609' as Address,
 } as const;
 
 /**
  * Compound V3 Pool Addresses (Base Chain)
  */
 export const COMPOUND_V3_POOLS = {
-  USDC: '0xb125E6687d4313864e53df431d5425969c15Eb2F' as Address,
+  USDC: '0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf' as Address,
 } as const;
-
-/**
- * Moonwell Pool Addresses (Base Chain)
- */
-export const MOONWELL_POOLS = {
-  USDC: '0xEdc817A28E8B93B03976FBd4a3dDBc9f7D176c22' as Address,
-} as const;
-
 /**
  * Harvest Pool Addresses (Base Chain)
  */
 export const HARVEST_POOLS = {
-  'USDC - Moonwell': '0x90613e167D42CA420942082157B42AF6fc6a8087' as Address,
-  'USDC - Autopilot': '0x0d877Dc7C8Fa3aD980DfDb18B48eC9F8768359C4' as Address,
-  'USDC - 40 Acres': '0xC777031D50F632083Be7080e51E390709062263E' as Address,
+  'USDC - Autopilot': '0x407D3d942d0911a2fEA7E22417f81E27c02D6c6F' as Address,
 } as const;
 
-/**
- * Morpho Pool Addresses (Base Chain)
- */
-export const MORPHO_POOLS = {
-  'Universal - USDC': '0xB7890CEE6CF4792cdCC13489D36D9d42726ab863' as Address,
-  'Seamless USDC Vault': '0x616a4E1db48e22028f6bbf20444Cd3b8e3273738' as Address,
-  'Moonwell Flagship USDC': '0xc1256Ae5FF1cf2719D4937adb3bbCCab2E00A2Ca' as Address,
-  'HighYield Clearstar USDC': '0xE74c499fA461AF1844fCa84204490877787cED56' as Address,
-  'Clearstar Reactor OpenEden Boosted USDC': '0x1D3b1Cd0a0f242d598834b3F2d126dC6bd774657' as Address,
-  'Gauntlet USDC Prime': '0xeE8F4eC5672F09119b96Ab6fB59C27E1b7e44b61' as Address,
-  'Gauntlet USDC Core': '0xc0c5689e6f4D256E861F65465b691aeEcC0dEb12' as Address,
-  'Gauntlet USDC Frontier': '0x236919F11ff9eA9550A4287696C2FC9e18E6e890' as Address,
-  'ExtrafiXLend USDC': '0x23479229e52Ab6aaD312D0B03DF9F33B46753B5e' as Address,
-  'Steakhouse USDC': '0xbeeF010f9cb27031ad51e3333f9aF9C6B1228183' as Address,
-} as const;
-
-
+export const ARBITRUM_MORPHO_POOLS = {
+  'Gauntlet USDC Prime': '0x7c574174DA4b2be3f705c6244B4BfA0815a8B3Ed',
+  'Gauntlet USDC Core': '0x7e97fa6893871A2751B5fE961978DCCb2c201E65',
+  'Steakhouse Prime USDC': '0x250CF7c82bAc7cB6cf899b6052979d4B5BA1f9ca',
+  'MEV Capital USDC': '0xa60643c90A542A95026C0F1dbdB0615fF42019Cf',
+  'Hyperithm USDC': '0x4B6F1C9E5d470b97181786b26da0d0945A7cf027',
+  'Steakhouse High Yield USDC': '0x5c0C306Aaa9F877de636f4d5822cA9F2E81563BA',
+};
 
 /**
  * Legacy CONTRACTS export for backward compatibility
@@ -101,9 +75,7 @@ export const CONTRACTS = {
   AAVE_POOL_USDC: AAVE_POOLS.USDC,
   FLUID_POOL_USDC: FLUID_POOLS.USDC,
   SPARK_POOL_USDC: SPARK_POOLS.USDC,
-  WASABI_POOL_USDC: WASABI_POOLS.USDC,
   COMPOUND_V3_POOL_USDC: COMPOUND_V3_POOLS.USDC,
-  MOONWELL_POOL_USDC: MOONWELL_POOLS.USDC,
 } as const;
 
 /**
@@ -132,10 +104,6 @@ export const SELECTORS = {
   COMPOUND_V3_SUPPLY: '0xf2b9fdb8' as `0x${string}`, // supply(address,uint256)
   COMPOUND_V3_WITHDRAW: '0xf3fef3a3' as `0x${string}`, // withdraw(address,uint256)
   
-  // Moonwell Pool functions (uses mint/redeem with single uint256 param)
-  MOONWELL_MINT: '0xa0712d68' as `0x${string}`, // mint(uint256)
-  MOONWELL_REDEEM: '0xdb006a75' as `0x${string}`, // redeem(uint256)
-  
   // Fluid, Spark, Wasabi & Morpho Pool functions (ERC4626 standard - same ABI)
   ERC4626_DEPOSIT: '0x6e553f65' as `0x${string}`, // deposit(uint256,address)
   ERC4626_WITHDRAW: '0xb460af94' as `0x${string}`, // withdraw(uint256,address,address)
@@ -144,7 +112,6 @@ export const SELECTORS = {
   REDEEM: '0xba087652' as `0x${string}`, // redeem(uint256,address,address)
   
   // Routing/Swap functions
-  ROUTE_MULTI: '0xf52e33f5' as `0x${string}`, // routeMulti(...)
   ROUTE_SINGLE: '0xb94c3609' as `0x${string}`, // routeSingle(...)
   
   // Morpho Adapter functions
@@ -156,6 +123,9 @@ export const SELECTORS = {
   
   // Merkl functions
   MERKL_CLAIM: '0x71ee95c0' as `0x${string}`, // claim(address[],address[],uint256[],bytes32[][])
+  
+  // SiloV2 functions
+  SILO_CLAIM_REWARDS: '0xef5cfb8c' as `0x${string}`, // claimRewards(address)
 } as const;
 
 /**
@@ -206,41 +176,59 @@ export const whitelistConfig: WhitelistItem[] = [
   // ========================================
   {
     target: '0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf' as Address,
-    selector: SELECTORS.ROUTE_MULTI,
-    description: "Router - routeMulti()",
-  },
-  {
-    target: '0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf' as Address,
     selector: SELECTORS.ROUTE_SINGLE,
     description: "Router - routeSingle()",
   },
   
   // ========================================
-  // MORPHO ADAPTER/BUNDLER FUNCTIONS (Base)
+  // MORPHO ADAPTER/BUNDLER FUNCTIONS (Arbitrum)
   // ========================================
   {
-    target: '0xb98c948cfa24072e58935bc004a8a7b376ae746a' as Address,
+    target: '0x9954aFB60BB5A222714c478ac86990F221788B88' as Address,
     selector: SELECTORS.MORPHO_ADAPTER_ERC4626_DEPOSIT,
-    description: "Morpho Adapter (Base) - erc4626Deposit()",
+    description: "Morpho Adapter (Arbitrum) - erc4626Deposit()",
   },
   {
-    target: '0xb98c948cfa24072e58935bc004a8a7b376ae746a' as Address,
+    target: '0x9954aFB60BB5A222714c478ac86990F221788B88' as Address,
     selector: SELECTORS.MORPHO_ADAPTER_ERC4626_REDEEM,
-    description: "Morpho Adapter (Base) - erc4626Redeem()",
+    description: "Morpho Adapter (Arbitrum) - erc4626Redeem()",
   },
   {
-    target: '0x6BFd8137e702540E7A42B74178A4a49Ba43920C4' as Address,
+    target: '0x1fa4431bc113d308bee1d46b0e98cb805fb48c13' as Address,
     selector: SELECTORS.MORPHO_BUNDLER_MULTICALL,
-    description: "Morpho Bundler3 (Base) - multicall()",
+    description: "Morpho Bundler3 (Arbitrum) - multicall()",
   },
   
   // ========================================
-  // MERKL DISTRIBUTOR (Base)
+  // EULER EARN USDC (Arbitrum)
+  // ========================================
+  {
+    target: '0xe4783824593a50Bfe9dc873204CEc171ebC62dE0' as Address,
+    selector: SELECTORS.ERC4626_DEPOSIT,
+    description: "Euler Earn USDC (Arbitrum) - deposit()",
+  },
+  {
+    target: '0xe4783824593a50Bfe9dc873204CEc171ebC62dE0' as Address,
+    selector: SELECTORS.REDEEM,
+    description: "Euler Earn USDC (Arbitrum) - redeem()",
+  },
+  
+  // ========================================
+  // MERKL DISTRIBUTOR (Arbitrum)
   // ========================================
   {
     target: '0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae' as Address,
     selector: SELECTORS.MERKL_CLAIM,
-    description: "Merkl Distributor (Base) - claim()",
+    description: "Merkl Distributor (Arbitrum) - claim()",
+  },
+  
+  // ========================================
+  // SILOV2 REWARDS CLAIMER (Arbitrum)
+  // ========================================
+  {
+    target: '0x43f8d8995C1b6b37Ca624C49819D671C8dcCe390' as Address,
+    selector: SELECTORS.SILO_CLAIM_REWARDS,
+    description: "SiloV2 RewardsClaimer (Arbitrum) - claimRewards()",
   },
 
   // ========================================
@@ -282,25 +270,6 @@ export const whitelistConfig: WhitelistItem[] = [
   },
   
   // ========================================
-  // WASABI POOL FUNCTIONS
-  // ========================================
-  {
-    target: WASABI_POOLS.USDC,
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Wasabi Pool USDC - deposit()",
-  },
-  // {
-  //   target: WASABI_POOLS.USDC,
-  //   selector: SELECTORS.ERC4626_WITHDRAW,
-  //   description: "Wasabi Pool USDC - withdraw()",
-  // },
-  {
-    target: WASABI_POOLS.USDC,
-    selector: SELECTORS.REDEEM,
-    description: "Wasabi Pool USDC - redeem()",
-  },
-  
-  // ========================================
   // COMPOUND V3 POOL FUNCTIONS
   // ========================================
   {
@@ -314,62 +283,25 @@ export const whitelistConfig: WhitelistItem[] = [
     description: "Compound V3 Pool USDC - withdraw()",
   },
   
-  // ========================================
-  // MOONWELL POOL FUNCTIONS
-  // ========================================
-  {
-    target: MOONWELL_POOLS.USDC,
-    selector: SELECTORS.MOONWELL_MINT,
-    description: "Moonwell Pool USDC - mint()",
-  },
-  {
-    target: MOONWELL_POOLS.USDC,
-    selector: SELECTORS.MOONWELL_REDEEM,
-    description: "Moonwell Pool USDC - redeem()",
-  },
   
   // ========================================
   // HARVEST POOL FUNCTIONS
   // ========================================
   // USDC - Moonwell (uses standard ERC4626 deposit/withdraw)
   {
-    target: HARVEST_POOLS['USDC - Moonwell'],
+    target: HARVEST_POOLS['USDC - Autopilot'],
     selector: SELECTORS.ERC4626_DEPOSIT,
     description: "Harvest USDC - Moonwell - deposit()",
   },
   // {
-  //   target: HARVEST_POOLS['USDC - Moonwell'],
+  //   target: HARVEST_POOLS['USDC - Autopilot'],
   //   selector: SELECTORS.ERC4626_WITHDRAW,
   //   description: "Harvest USDC - Moonwell - withdraw()",
   // },
   {
-    target: HARVEST_POOLS['USDC - Moonwell'],
+    target: HARVEST_POOLS['USDC - Autopilot'],
     selector: SELECTORS.REDEEM,
     description: "Harvest USDC - Moonwell - redeem()",
-  },
-  
-  // USDC - 40 Acres (uses standard ERC4626 deposit/withdraw)
-  {
-    target: HARVEST_POOLS['USDC - 40 Acres'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Harvest USDC - 40 Acres - deposit()",
-  },
-  {
-    target: HARVEST_POOLS['USDC - 40 Acres'],
-    selector: SELECTORS.REDEEM,
-    description: "Harvest USDC - 40 Acres - withdraw()",
-  },
-  
-  // USDC - Autopilot (uses deposit/redeem pattern)
-  {
-    target: HARVEST_POOLS['USDC - Autopilot'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Harvest USDC - Autopilot - deposit()",
-  },
-  {
-    target: HARVEST_POOLS['USDC - Autopilot'],
-    selector: SELECTORS.REDEEM,
-    description: "Harvest USDC - Autopilot - redeem()",
   },
   
   // // ========================================
@@ -377,132 +309,69 @@ export const whitelistConfig: WhitelistItem[] = [
   // // ========================================
   // Universal - USDC
   {
-    target: MORPHO_POOLS['Universal - USDC'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho Universal - USDC - deposit()",
-  },
-  // {
-  //   target: MORPHO_POOLS['Universal - USDC'],
-  //   selector: SELECTORS.ERC4626_WITHDRAW,
-  //   description: "Morpho Universal - USDC - withdraw()",
-  // },
-  {
-    target: MORPHO_POOLS['Universal - USDC'],
-    selector: SELECTORS.REDEEM,
-    description: "Morpho Universal - USDC - redeem()",
-  },
-  
-  // Seamless USDC Vault
-  {
-    target: MORPHO_POOLS['Seamless USDC Vault'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho Seamless USDC Vault - deposit()",
-  },
-  {
-    target: MORPHO_POOLS['Seamless USDC Vault'],
-    selector: SELECTORS.REDEEM,
-    description: "Morpho Seamless USDC Vault - withdraw()",
-  },
-  
-  // Moonwell Flagship USDC
-  {
-    target: MORPHO_POOLS['Moonwell Flagship USDC'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho Moonwell Flagship USDC - deposit()",
-  },
-  {
-    target: MORPHO_POOLS['Moonwell Flagship USDC'],
-    selector: SELECTORS.REDEEM,
-    description: "Morpho Moonwell Flagship USDC - withdraw()",
-  },
-  
-  // HighYield Clearstar USDC
-  {
-    target: MORPHO_POOLS['HighYield Clearstar USDC'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho HighYield Clearstar USDC - deposit()",
-  },
-  {
-    target: MORPHO_POOLS['HighYield Clearstar USDC'],
-    selector: SELECTORS.REDEEM,
-    description: "Morpho HighYield Clearstar USDC - withdraw()",
-  },
-  
-  // Clearstar Reactor OpenEden Boosted USDC
-  {
-    target: MORPHO_POOLS['Clearstar Reactor OpenEden Boosted USDC'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho Clearstar Reactor OpenEden Boosted USDC - deposit()",
-  },
-  {
-    target: MORPHO_POOLS['Clearstar Reactor OpenEden Boosted USDC'],
-    selector: SELECTORS.REDEEM,
-    description: "Morpho Clearstar Reactor OpenEden Boosted USDC - withdraw()",
-  },
-  
-  // Gauntlet USDC Prime
-  {
-    target: MORPHO_POOLS['Gauntlet USDC Prime'],
+    target: ARBITRUM_MORPHO_POOLS['Gauntlet USDC Prime'] as Address,
     selector: SELECTORS.ERC4626_DEPOSIT,
     description: "Morpho Gauntlet USDC Prime - deposit()",
   },
   {
-    target: MORPHO_POOLS['Gauntlet USDC Prime'],
+    target: ARBITRUM_MORPHO_POOLS['Gauntlet USDC Prime'] as Address,
     selector: SELECTORS.REDEEM,
-    description: "Morpho Gauntlet USDC Prime - withdraw()",
+    description: "Morpho Gauntlet USDC Prime - redeem()",
   },
   
-  // Gauntlet USDC Core
   {
-    target: MORPHO_POOLS['Gauntlet USDC Core'],
+    target: ARBITRUM_MORPHO_POOLS['Gauntlet USDC Core'] as Address,
     selector: SELECTORS.ERC4626_DEPOSIT,
     description: "Morpho Gauntlet USDC Core - deposit()",
   },
   {
-    target: MORPHO_POOLS['Gauntlet USDC Core'],
+    target: ARBITRUM_MORPHO_POOLS['Gauntlet USDC Core'] as Address,
     selector: SELECTORS.REDEEM,
-    description: "Morpho Gauntlet USDC Core - withdraw()",
+    description: "Morpho Gauntlet USDC Core - redeem()",
+  },
+
+  {
+    target: ARBITRUM_MORPHO_POOLS['Steakhouse Prime USDC'] as Address,
+    selector: SELECTORS.ERC4626_DEPOSIT,
+    description: "Morpho Steakhouse Prime USDC - deposit()",
+  },
+  {
+    target: ARBITRUM_MORPHO_POOLS['Steakhouse Prime USDC'] as Address,
+    selector: SELECTORS.REDEEM,
+    description: "Morpho Steakhouse Prime USDC - redeem()",
   },
   
-  // Gauntlet USDC Frontier
   {
-    target: MORPHO_POOLS['Gauntlet USDC Frontier'],
+    target: ARBITRUM_MORPHO_POOLS['MEV Capital USDC'] as Address,
     selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho Gauntlet USDC Frontier - deposit()",
+    description: "Morpho MEV Capital USDC - deposit()",
   },
   {
-    target: MORPHO_POOLS['Gauntlet USDC Frontier'],
+    target: ARBITRUM_MORPHO_POOLS['MEV Capital USDC'] as Address,
     selector: SELECTORS.REDEEM,
-    description: "Morpho Gauntlet USDC Frontier - withdraw()",
+    description: "Morpho MEV Capital USDC - redeem()",
   },
-  
-  // // ExtrafiXLend USDC
+
   {
-    target: MORPHO_POOLS['ExtrafiXLend USDC'],
+    target: ARBITRUM_MORPHO_POOLS['Steakhouse High Yield USDC'] as Address,
     selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho ExtrafiXLend USDC - deposit()",
+    description: "Morpho Steakhouse High Yield USDC - deposit()",
   },
   {
-    target: MORPHO_POOLS['ExtrafiXLend USDC'],
+    target: ARBITRUM_MORPHO_POOLS['Steakhouse High Yield USDC'] as Address,
     selector: SELECTORS.REDEEM,
-    description: "Morpho ExtrafiXLend USDC - withdraw()",
+    description: "Morpho Steakhouse High Yield USDC - redeem()",
   },
+
   {
-    target: MORPHO_POOLS['ExtrafiXLend USDC'],
-    selector: SELECTORS.ERC20_APPROVE,
-    description: "Morpho ExtrafiXLend USDC - approve()",
-  },
-  
-  // Steakhouse USDC
-  {
-    target: MORPHO_POOLS['Steakhouse USDC'],
+    target: ARBITRUM_MORPHO_POOLS['Hyperithm USDC'] as Address,
     selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho Steakhouse USDC - deposit()",
+    description: "Morpho Hyperithm USDC - deposit()",
   },
   {
-    target: MORPHO_POOLS['Steakhouse USDC'],
+    target: ARBITRUM_MORPHO_POOLS['Hyperithm USDC'] as Address,
     selector: SELECTORS.REDEEM,
-    description: "Morpho Steakhouse USDC - withdraw()",
+    description: "Morpho Hyperithm USDC - redeem()",
   },
 ];
 
