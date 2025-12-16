@@ -335,7 +335,7 @@ smartAccount.installModule(MODULE_TYPE_EXECUTOR, address(proxy), "");
 PRIVATE_KEY=pk forge script script/0-DeployUpgradeableSimple.s.sol --rpc-url https://base-mainnet.g.alchemy.com/v2/key --broadcast -vvvv
 
 # Deploy TargetRegistry
-PRIVATE_KEY=pk forge script script/1-DeployTargetRegistry.s.sol --rpc-url https://base-mainnet.g.alchemy.com/v2/key --broadcast -vvvv
+PRIVATE_KEY=pk forge script script/1-DeployTargetRegistry.s.sol --rpc-url https://sonic-mainnet.g.alchemy.com/v2/key --broadcast -vvvv
 
 # Verify TargetRegistry
 forge verify-contract <Registry-Address> src/registry/TargetRegistry.sol:TargetRegistry --rpc-url https://base-mainnet.g.alchemy.com/v2/key --chain-id 8453 --compiler-version 0.8.30 --etherscan-api-key etherscan-key --constructor-args 0x000000000000000000000000d61C43c089852e0AB68B967dD1eDe03a18e52223
@@ -359,19 +359,78 @@ forge verify-contract \
 
 # for Arb
 forge verify-contract \
-  0xE350ebB0D0c5365502875f1d2C910bcB58b23424 \
+  0xF659d30D4EB88B06A909F20839D8959Bd77d8790 \
   lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy \
   --constructor-args \
-  0x000000000000000000000000f8daae25b9388762eb24e83324d9f4ec46c000fc00000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000 \
-  --rpc-url https://arb-mainnet.g.alchemy.com/v2/key \
-  --chain-id 42161 \
+  0x000000000000000000000000d5C2dFD6d34c2bEA1dbec14DE4780d4A9D45ea1700000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000 \
+  --rpc-url https://eth-mainnet.g.alchemy.com/v2/key \
+  --chain-id 1 \
   --compiler-version 0.8.30 \
-  --etherscan-api-key $ARB_ETHERSCAN_API_KEY
+  --etherscan-api-key key
 
 forge script script/DeployWithCREATE3.s.sol:DeployWithCREATE3 \
-  --rpc-url $BASE_RPC \
+  --rpc-url https://eth-mainnet.g.alchemy.com/v2/key \
   --broadcast \
   -vvvv
+
+# Final Command
+
+PRIVATE_KEY=pk forge script script/1-DeployTargetRegistry.s.sol --rpc-url https://sonic-mainnet.g.alchemy.com/v2/key --broadcast -vvvv
+
+forge script script/DeployWithCREATE3.s.sol:DeployWithCREATE3 \
+  --rpc-url https://eth-mainnet.g.alchemy.com/v2/key \
+  --broadcast \
+  -vvvv
+
+forge verify-contract \
+  <TARGET_REGISTRY_ADDRESS> \
+  src/registry/TargetRegistry.sol:TargetRegistry \
+  --rpc-url https://base-mainnet.g.alchemy.com/v2/key \
+  --chain-id 8453 \
+  --compiler-version 0.8.30 \
+  --etherscan-api-key etherscan-key \
+  --constructor-args 0x000000000000000000000000d61C43c089852e0AB68B967dD1eDe03a18e52223
+
+forge verify-contract \
+    <MODULE_IMPL_ADDRESS> \
+    src/module/GuardedExecModuleUpgradeable.sol:GuardedExecModuleUpgradeable \
+    --rpc-url https://base-mainnet.g.alchemy.com/v2/key \
+    --chain-id 8453 \
+    --compiler-version 0.8.30 \
+    --etherscan-api-key etherscan-key
+
+forge verify-contract \
+  <MODULE_PROXY_ADDRESS> \
+  lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy \
+  --constructor-args \
+  0x000000000000000000000000c8F535f56C191D4D623e252D540BA1Fcb656120800000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000 \
+  --rpc-url https://base-mainnet.g.alchemy.com/v2/key \
+  --chain-id 8453 \
+  --compiler-version 0.8.30 \
+  --etherscan-api-key etherscan-key
+
+
+# For plasma
+forge verify-contract \
+  0xc8F535f56C191D4D623e252D540BA1Fcb6561208 \
+  src/registry/TargetRegistry.sol:TargetRegistry \
+  --rpc-url https://plasma-mainnet.g.alchemy.com/v2/key \
+  --chain-id 9745 \
+  --compiler-version 0.8.30 \
+  --verifier custom \
+  --verifier-url 'https://api.routescan.io/v2/network/mainnet/evm/9745/etherscan' \
+  --verifier-api-key "verifyContract" \
+  --constructor-args 0x000000000000000000000000d61C43c089852e0AB68B967dD1eDe03a18e52223
+
+forge verify-contract \
+  0xA49EA89806c53966f12920d12F1B484C63E43AEA \
+  src/module/GuardedExecModuleUpgradeable.sol:GuardedExecModuleUpgradeable \
+  --rpc-url https://plasma-mainnet.g.alchemy.com/v2/key \
+  --chain-id 9745 \
+  --compiler-version 0.8.30 \
+  --verifier custom \
+  --verifier-url 'https://api.routescan.io/v2/network/mainnet/evm/9745/etherscan' \
+  --verifier-api-key "verifyContract"
 ```
 
 

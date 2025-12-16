@@ -373,6 +373,12 @@ export const whitelistConfig: WhitelistItem[] = [
     selector: SELECTORS.REDEEM,
     description: "Morpho Hyperithm USDC - redeem()",
   },
+
+  {
+    target: '0xb98c948cfa24072e58935bc004a8a7b376ae746a' as Address,
+    selector: SELECTORS.MORPHO_ADAPTER_ERC4626_REDEEM,
+    description: "Morpho Adapter (Base) - erc4626Redeem()",
+  },
 ];
 
 /**
