@@ -9,6 +9,9 @@ allow_paths = ["*", "/"]
 gas_limit = "18446744073709551615"
 memory_limit = 2147483648
 verbosity = 3
+# NOTE: Removed bytecode_hash = "none" to match Base/Arbitrum deployment
+# Base and Arbitrum were deployed with default settings (with metadata)
+# This allows Ethereum to match Base/Arbitrum addresses
 
 [rpc_endpoints]
 mainnet = "${MAINNET_RPC_URL}"
