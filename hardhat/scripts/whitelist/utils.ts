@@ -5,7 +5,7 @@
  */
 
 import { privateKeyToAccount } from 'viem/accounts';
-import { arbitrum, base } from 'viem/chains';
+import { arbitrum, base, sonic, plasma } from 'viem/chains';
 import { 
   createPublicClient,
   createWalletClient,
@@ -126,5 +126,87 @@ export function filterByStatus<T extends { isWhitelisted: boolean }>(
   filterWhitelisted: boolean
 ): T[] {
   return statuses.filter(status => status.isWhitelisted === filterWhitelisted);
+}
+
+/**
+ * Create clients for Plasma chain from environment variables
+ */
+export function createPlasmaClients(): WhitelistClients {
+  const privateKey = process.env.PLASMA_PRIVATE_KEY;
+  const rpcUrl = process.env.PLASMA_RPC_URL;
+
+  if (!privateKey) {
+    throw new Error("Missing required environment variable: PLASMA_PRIVATE_KEY");
+  }
+  if (!rpcUrl) {
+    throw new Error("Missing required environment variable: PLASMA_RPC_URL");
+  }
+
+  const account = privateKeyToAccount(privateKey as `0x${string}`);
+
+  const publicClient = createPublicClient({
+    chain: plasma,
+    transport: http(rpcUrl),
+  });
+
+  const walletClient = createWalletClient({
+    account,
+    chain: plasma,
+    transport: http(rpcUrl),
+  });
+
+  return { publicClient, walletClient, account };
+}
+
+/**
+ * Create clients for Sonic chain from environment variables
+ */
+export function createSonicClients(): WhitelistClients {
+  const privateKey = process.env.SONIC_PRIVATE_KEY;
+  const rpcUrl = process.env.SONIC_RPC_URL;
+
+  if (!privateKey) {
+    throw new Error("Missing required environment variable: SONIC_PRIVATE_KEY");
+  }
+  if (!rpcUrl) {
+    throw new Error("Missing required environment variable: SONIC_RPC_URL");
+  }
+
+  const account = privateKeyToAccount(privateKey as `0x${string}`);
+
+  const publicClient = createPublicClient({
+    chain: sonic,
+    transport: http(rpcUrl),
+  });
+
+  const walletClient = createWalletClient({
+    account,
+    chain: sonic,
+    transport: http(rpcUrl),
+  });
+
+  return { publicClient, walletClient, account };
+}
+
+/**
+ * Get registry address from environment (Plasma)
+ */
+export function getPlasmaRegistryAddress(): Address {
+  const registryAddress = process.env.PLASMA_TARGET_REGISTRY_ADDRESS;
+  if (!registryAddress) {
+    throw new Error("Missing required environment variable: PLASMA_TARGET_REGISTRY_ADDRESS");
+  }
+  return registryAddress as Address;
+}
+
+/**
+ * Get registry address from environment (Sonic)
+ */
+export function getSonicRegistryAddress(): Address {
+  const registryAddress = process.env.SONIC_TARGET_REGISTRY_ADDRESS;
+  if (!registryAddress) {
+    throw new Error("Missing required environment variable: SONIC_TARGET_REGISTRY_ADDRESS");
+  }
+  return registryAddress as Address;
 }
 
