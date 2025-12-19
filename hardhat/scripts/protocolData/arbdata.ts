@@ -50,6 +50,13 @@ export const SPARK_POOLS = {
 export const COMPOUND_V3_POOLS = {
   USDC: '0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf' as Address,
 } as const;
+
+/**
+ * Dolomite Pool Addresses (Arbitrum Chain)
+ */
+export const DOLOMITE_POOLS = {
+  USDC: '0xf8b2c637A68cF6A17b1DF9F8992EeBeFf63d2dFf' as Address,
+} as const;
 /**
  * Harvest Pool Addresses (Base Chain)
  */
@@ -126,6 +133,10 @@ export const SELECTORS = {
   
   // SiloV2 functions
   SILO_CLAIM_REWARDS: '0xef5cfb8c' as `0x${string}`, // claimRewards(address)
+  
+  // Dolomite functions
+  DOLOMITE_DEPOSIT_WEI: '0xb6f32e03' as `0x${string}`, // depositWei(uint256,uint256,uint256,uint256,uint8)
+  DOLOMITE_WITHDRAW_WEI: '0xcc8832d9' as `0x${string}`, // withdrawWei(uint256,uint256,uint256,uint256,uint8)
 } as const;
 
 /**
@@ -271,6 +282,20 @@ export const whitelistConfig: WhitelistItem[] = [
     target: COMPOUND_V3_POOLS.USDC,
     selector: SELECTORS.COMPOUND_V3_WITHDRAW,
     description: "Compound V3 Pool USDC - withdraw()",
+  },
+  
+  // ========================================
+  // DOLOMITE POOL FUNCTIONS (Arbitrum)
+  // ========================================
+  {
+    target: DOLOMITE_POOLS.USDC,
+    selector: SELECTORS.DOLOMITE_DEPOSIT_WEI,
+    description: "Dolomite Pool USDC - depositWei()",
+  },
+  {
+    target: DOLOMITE_POOLS.USDC,
+    selector: SELECTORS.DOLOMITE_WITHDRAW_WEI,
+    description: "Dolomite Pool USDC - withdrawWei()",
   },
   
   // ========================================
