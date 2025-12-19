@@ -20,8 +20,8 @@ import { join } from "path";
 import { whitelistConfig } from './whitelist/arbdata';
 
 import {
-  createClients,
-  getRegistryAddress,
+  createArbitrumClients,
+  getArbitrumRegistryAddress,
   checkWhitelistStatus,
   displayWhitelistStatus,
   filterByStatus,
@@ -33,14 +33,15 @@ import {
 dotenv.config({ path: join(__dirname, "..", ".env") });
 
 async function main() {
-  console.log("🚀 Add to Whitelist");
-  console.log("==================\n");
+  console.log("🚀 Add to Whitelist (Arbitrum Chain)");
+  console.log("=====================================\n");
 
   // Initialize clients and get registry address
-  const { publicClient, walletClient, account } = createClients();
-  const registryAddress = getRegistryAddress();
+  const { publicClient, walletClient, account } = createArbitrumClients();
+  const registryAddress = getArbitrumRegistryAddress();
 
   console.log("Configuration:");
+  console.log("  Chain: Arbitrum (42161)");
   console.log("  Registry address:", registryAddress);
   console.log("  Account address:", account.address);
   console.log("  Items to process:", whitelistConfig.length);
@@ -60,7 +61,7 @@ async function main() {
   
   if (notWhitelisted.length === 0) {
     console.log("\n✅ All items are already whitelisted!");
-    console.log("   If you want to add new items, edit hardhat/scripts/whitelist/data.ts");
+    console.log("   If you want to add new items, edit hardhat/scripts/whitelist/arbdata.ts");
     return;
   }
   console.log("Not whitelisted items:", notWhitelisted.length);

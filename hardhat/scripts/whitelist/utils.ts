@@ -40,9 +40,9 @@ export type WhitelistClients = {
 };
 
 /**
- * Create clients from environment variables
+ * Create clients for Base chain from environment variables
  */
-export function createClients(): WhitelistClients {
+export function createBaseClients(): WhitelistClients {
   const privateKey = process.env.BASE_PRIVATE_KEY;
   const rpcUrl = process.env.BASE_RPC_URL;
 
@@ -70,14 +70,71 @@ export function createClients(): WhitelistClients {
 }
 
 /**
- * Get registry address from environment
+ * Create clients for Arbitrum chain from environment variables
  */
-export function getRegistryAddress(): Address {
-  const registryAddress = process.env.TARGET_REGISTRY_ADDRESS;
+export function createArbitrumClients(): WhitelistClients {
+  const privateKey = process.env.ARB_PRIVATE_KEY;
+  const rpcUrl = process.env.ARB_RPC_URL;
+
+  if (!privateKey) {
+    throw new Error("Missing required environment variable: ARB_PRIVATE_KEY");
+  }
+  if (!rpcUrl) {
+    throw new Error("Missing required environment variable: ARB_RPC_URL");
+  }
+
+  const account = privateKeyToAccount(privateKey as `0x${string}`);
+
+  const publicClient = createPublicClient({
+    chain: arbitrum,
+    transport: http(rpcUrl),
+  });
+
+  const walletClient = createWalletClient({
+    account,
+    chain: arbitrum,
+    transport: http(rpcUrl),
+  });
+
+  return { publicClient, walletClient, account };
+}
+
+/**
+ * Get registry address from environment (Base)
+ */
+export function getBaseRegistryAddress(): Address {
+  const registryAddress = process.env.BASE_TARGET_REGISTRY_ADDRESS;
   if (!registryAddress) {
-    throw new Error("Missing required environment variable: TARGET_REGISTRY_ADDRESS");
+    throw new Error("Missing required environment variable: BASE_TARGET_REGISTRY_ADDRESS");
   }
   return registryAddress as Address;
+}
+
+/**
+ * Get registry address from environment (Arbitrum)
+ */
+export function getArbitrumRegistryAddress(): Address {
+  const registryAddress = process.env.ARB_TARGET_REGISTRY_ADDRESS;
+  if (!registryAddress) {
+    throw new Error("Missing required environment variable: ARB_TARGET_REGISTRY_ADDRESS");
+  }
+  return registryAddress as Address;
+}
+
+/**
+ * @deprecated Use createBaseClients() instead
+ * Legacy function for backward compatibility
+ */
+export function createClients(): WhitelistClients {
+  return createBaseClients();
+}
+
+/**
+ * @deprecated Use getBaseRegistryAddress() instead
+ * Legacy function for backward compatibility
+ */
+export function getRegistryAddress(): Address {
+  return getBaseRegistryAddress();
 }
 
 /**

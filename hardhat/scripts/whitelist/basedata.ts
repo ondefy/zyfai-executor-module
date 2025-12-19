@@ -204,11 +204,7 @@ export const whitelistConfig: WhitelistItem[] = [
   // ========================================
   // ROUTING/SWAP FUNCTIONS
   // ========================================
-  {
-    target: '0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf' as Address,
-    selector: SELECTORS.ROUTE_MULTI,
-    description: "Router - routeMulti()",
-  },
+
   {
     target: '0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf' as Address,
     selector: SELECTORS.ROUTE_SINGLE,
@@ -251,11 +247,6 @@ export const whitelistConfig: WhitelistItem[] = [
     selector: SELECTORS.ERC4626_DEPOSIT,
     description: "Fluid Pool USDC - deposit()",
   },
-  // {
-  //   target: FLUID_POOLS.USDC,
-  //   selector: SELECTORS.ERC4626_WITHDRAW,
-  //   description: "Fluid Pool USDC - withdraw()",
-  // },
   {
     target: FLUID_POOLS.USDC,
     selector: SELECTORS.REDEEM,
@@ -270,11 +261,6 @@ export const whitelistConfig: WhitelistItem[] = [
     selector: SELECTORS.ERC4626_DEPOSIT,
     description: "Spark Pool USDC - deposit()",
   },
-  // {
-  //   target: SPARK_POOLS.USDC,
-  //   selector: SELECTORS.ERC4626_WITHDRAW,
-  //   description: "Spark Pool USDC - withdraw()",
-  // },
   {
     target: SPARK_POOLS.USDC,
     selector: SELECTORS.REDEEM,
@@ -289,11 +275,6 @@ export const whitelistConfig: WhitelistItem[] = [
     selector: SELECTORS.ERC4626_DEPOSIT,
     description: "Wasabi Pool USDC - deposit()",
   },
-  // {
-  //   target: WASABI_POOLS.USDC,
-  //   selector: SELECTORS.ERC4626_WITHDRAW,
-  //   description: "Wasabi Pool USDC - withdraw()",
-  // },
   {
     target: WASABI_POOLS.USDC,
     selector: SELECTORS.REDEEM,
@@ -315,7 +296,86 @@ export const whitelistConfig: WhitelistItem[] = [
   },
   
   // ========================================
-  // MOONWELL POOL FUNCTIONS
+  // MORPHO POOL FUNCTIONS (Base)
+  // Only approve is needed for Morpho vaults per the provided list
+  // ========================================
+  {
+    target: MORPHO_POOLS['Universal - USDC'],
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "Morpho Universal - USDC - approve()",
+  },
+  {
+    target: MORPHO_POOLS['Seamless USDC Vault'],
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "Morpho Seamless USDC Vault - approve()",
+  },
+  {
+    target: MORPHO_POOLS['Moonwell Flagship USDC'],
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "Morpho Moonwell Flagship USDC - approve()",
+  },
+  {
+    target: MORPHO_POOLS['HighYield Clearstar USDC'],
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "Morpho HighYield Clearstar USDC - approve()",
+  },
+  {
+    target: MORPHO_POOLS['Clearstar Reactor OpenEden Boosted USDC'],
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "Morpho Clearstar Reactor OpenEden Boosted USDC - approve()",
+  },
+  {
+    target: MORPHO_POOLS['Gauntlet USDC Prime'],
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "Morpho Gauntlet USDC Prime - approve()",
+  },
+  {
+    target: MORPHO_POOLS['Gauntlet USDC Core'],
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "Morpho Gauntlet USDC Core - approve()",
+  },
+  {
+    target: MORPHO_POOLS['Gauntlet USDC Frontier'],
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "Morpho Gauntlet USDC Frontier - approve()",
+  },
+  {
+    target: MORPHO_POOLS['ExtrafiXLend USDC'],
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "Morpho ExtrafiXLend USDC - approve()",
+  },
+  {
+    target: MORPHO_POOLS['Steakhouse USDC'],
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "Morpho Steakhouse USDC - approve()",
+  },
+];
+
+/**
+ * REMOVE WHITELIST CONFIGURATION
+ * 
+ * Items to be removed from the whitelist.
+ * These are items that were previously whitelisted but are no longer needed
+ * based on the updated requirements.
+ */
+export const removeWhitelistConfig: WhitelistItem[] = [
+  // ========================================
+  // ROUTING/SWAP FUNCTIONS (To Remove)
+  // ========================================
+  {
+    target: '0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf' as Address,
+    selector: SELECTORS.ROUTE_MULTI,
+    description: "Router - routeMulti()",
+  },
+
+  {
+    target: FLUID_POOLS.USDC,
+    selector: SELECTORS.ERC4626_WITHDRAW,
+    description: "Fluid Pool USDC - withdraw()",
+  },
+  
+  // ========================================
+  // MOONWELL POOL FUNCTIONS (To Remove)
   // ========================================
   {
     target: MOONWELL_POOLS.USDC,
@@ -329,26 +389,124 @@ export const whitelistConfig: WhitelistItem[] = [
   },
   
   // ========================================
-  // HARVEST POOL FUNCTIONS
+  // MORPHO POOL DEPOSIT/REDEEM (To Remove)
+  // Only approve should remain, deposit/redeem should be removed
   // ========================================
-  // USDC - Moonwell (uses standard ERC4626 deposit/withdraw)
+  {
+    target: MORPHO_POOLS['Universal - USDC'],
+    selector: SELECTORS.ERC4626_DEPOSIT,
+    description: "Morpho Universal - USDC - deposit()",
+  },
+  {
+    target: MORPHO_POOLS['Universal - USDC'],
+    selector: SELECTORS.REDEEM,
+    description: "Morpho Universal - USDC - redeem()",
+  },
+  {
+    target: MORPHO_POOLS['Seamless USDC Vault'],
+    selector: SELECTORS.ERC4626_DEPOSIT,
+    description: "Morpho Seamless USDC Vault - deposit()",
+  },
+  {
+    target: MORPHO_POOLS['Seamless USDC Vault'],
+    selector: SELECTORS.REDEEM,
+    description: "Morpho Seamless USDC Vault - redeem()",
+  },
+  {
+    target: MORPHO_POOLS['Moonwell Flagship USDC'],
+    selector: SELECTORS.ERC4626_DEPOSIT,
+    description: "Morpho Moonwell Flagship USDC - deposit()",
+  },
+  {
+    target: MORPHO_POOLS['Moonwell Flagship USDC'],
+    selector: SELECTORS.REDEEM,
+    description: "Morpho Moonwell Flagship USDC - redeem()",
+  },
+  {
+    target: MORPHO_POOLS['HighYield Clearstar USDC'],
+    selector: SELECTORS.ERC4626_DEPOSIT,
+    description: "Morpho HighYield Clearstar USDC - deposit()",
+  },
+  {
+    target: MORPHO_POOLS['HighYield Clearstar USDC'],
+    selector: SELECTORS.REDEEM,
+    description: "Morpho HighYield Clearstar USDC - redeem()",
+  },
+  {
+    target: MORPHO_POOLS['Clearstar Reactor OpenEden Boosted USDC'],
+    selector: SELECTORS.ERC4626_DEPOSIT,
+    description: "Morpho Clearstar Reactor OpenEden Boosted USDC - deposit()",
+  },
+  {
+    target: MORPHO_POOLS['Clearstar Reactor OpenEden Boosted USDC'],
+    selector: SELECTORS.REDEEM,
+    description: "Morpho Clearstar Reactor OpenEden Boosted USDC - redeem()",
+  },
+  {
+    target: MORPHO_POOLS['Gauntlet USDC Prime'],
+    selector: SELECTORS.ERC4626_DEPOSIT,
+    description: "Morpho Gauntlet USDC Prime - deposit()",
+  },
+  {
+    target: MORPHO_POOLS['Gauntlet USDC Prime'],
+    selector: SELECTORS.REDEEM,
+    description: "Morpho Gauntlet USDC Prime - redeem()",
+  },
+  {
+    target: MORPHO_POOLS['Gauntlet USDC Core'],
+    selector: SELECTORS.ERC4626_DEPOSIT,
+    description: "Morpho Gauntlet USDC Core - deposit()",
+  },
+  {
+    target: MORPHO_POOLS['Gauntlet USDC Core'],
+    selector: SELECTORS.REDEEM,
+    description: "Morpho Gauntlet USDC Core - redeem()",
+  },
+  {
+    target: MORPHO_POOLS['Gauntlet USDC Frontier'],
+    selector: SELECTORS.ERC4626_DEPOSIT,
+    description: "Morpho Gauntlet USDC Frontier - deposit()",
+  },
+  {
+    target: MORPHO_POOLS['Gauntlet USDC Frontier'],
+    selector: SELECTORS.REDEEM,
+    description: "Morpho Gauntlet USDC Frontier - redeem()",
+  },
+  {
+    target: MORPHO_POOLS['ExtrafiXLend USDC'],
+    selector: SELECTORS.ERC4626_DEPOSIT,
+    description: "Morpho ExtrafiXLend USDC - deposit()",
+  },
+  {
+    target: MORPHO_POOLS['ExtrafiXLend USDC'],
+    selector: SELECTORS.REDEEM,
+    description: "Morpho ExtrafiXLend USDC - redeem()",
+  },
+  {
+    target: MORPHO_POOLS['Steakhouse USDC'],
+    selector: SELECTORS.ERC4626_DEPOSIT,
+    description: "Morpho Steakhouse USDC - deposit()",
+  },
+  {
+    target: MORPHO_POOLS['Steakhouse USDC'],
+    selector: SELECTORS.REDEEM,
+    description: "Morpho Steakhouse USDC - redeem()",
+  },
+  
+  // ========================================
+  // HARVEST POOL FUNCTIONS (To Remove)
+  // Not in the provided list - should be removed
+  // ========================================
   {
     target: HARVEST_POOLS['USDC - Moonwell'],
     selector: SELECTORS.ERC4626_DEPOSIT,
     description: "Harvest USDC - Moonwell - deposit()",
   },
-  // {
-  //   target: HARVEST_POOLS['USDC - Moonwell'],
-  //   selector: SELECTORS.ERC4626_WITHDRAW,
-  //   description: "Harvest USDC - Moonwell - withdraw()",
-  // },
   {
     target: HARVEST_POOLS['USDC - Moonwell'],
     selector: SELECTORS.REDEEM,
     description: "Harvest USDC - Moonwell - redeem()",
   },
-  
-  // USDC - 40 Acres (uses standard ERC4626 deposit/withdraw)
   {
     target: HARVEST_POOLS['USDC - 40 Acres'],
     selector: SELECTORS.ERC4626_DEPOSIT,
@@ -357,10 +515,8 @@ export const whitelistConfig: WhitelistItem[] = [
   {
     target: HARVEST_POOLS['USDC - 40 Acres'],
     selector: SELECTORS.REDEEM,
-    description: "Harvest USDC - 40 Acres - withdraw()",
+    description: "Harvest USDC - 40 Acres - redeem()",
   },
-  
-  // USDC - Autopilot (uses deposit/redeem pattern)
   {
     target: HARVEST_POOLS['USDC - Autopilot'],
     selector: SELECTORS.ERC4626_DEPOSIT,
@@ -370,139 +526,6 @@ export const whitelistConfig: WhitelistItem[] = [
     target: HARVEST_POOLS['USDC - Autopilot'],
     selector: SELECTORS.REDEEM,
     description: "Harvest USDC - Autopilot - redeem()",
-  },
-  
-  // // ========================================
-  // // MORPHO POOL FUNCTIONS
-  // // ========================================
-  // Universal - USDC
-  {
-    target: MORPHO_POOLS['Universal - USDC'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho Universal - USDC - deposit()",
-  },
-  // {
-  //   target: MORPHO_POOLS['Universal - USDC'],
-  //   selector: SELECTORS.ERC4626_WITHDRAW,
-  //   description: "Morpho Universal - USDC - withdraw()",
-  // },
-  {
-    target: MORPHO_POOLS['Universal - USDC'],
-    selector: SELECTORS.REDEEM,
-    description: "Morpho Universal - USDC - redeem()",
-  },
-  
-  // Seamless USDC Vault
-  {
-    target: MORPHO_POOLS['Seamless USDC Vault'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho Seamless USDC Vault - deposit()",
-  },
-  {
-    target: MORPHO_POOLS['Seamless USDC Vault'],
-    selector: SELECTORS.REDEEM,
-    description: "Morpho Seamless USDC Vault - withdraw()",
-  },
-  
-  // Moonwell Flagship USDC
-  {
-    target: MORPHO_POOLS['Moonwell Flagship USDC'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho Moonwell Flagship USDC - deposit()",
-  },
-  {
-    target: MORPHO_POOLS['Moonwell Flagship USDC'],
-    selector: SELECTORS.REDEEM,
-    description: "Morpho Moonwell Flagship USDC - withdraw()",
-  },
-  
-  // HighYield Clearstar USDC
-  {
-    target: MORPHO_POOLS['HighYield Clearstar USDC'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho HighYield Clearstar USDC - deposit()",
-  },
-  {
-    target: MORPHO_POOLS['HighYield Clearstar USDC'],
-    selector: SELECTORS.REDEEM,
-    description: "Morpho HighYield Clearstar USDC - withdraw()",
-  },
-  
-  // Clearstar Reactor OpenEden Boosted USDC
-  {
-    target: MORPHO_POOLS['Clearstar Reactor OpenEden Boosted USDC'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho Clearstar Reactor OpenEden Boosted USDC - deposit()",
-  },
-  {
-    target: MORPHO_POOLS['Clearstar Reactor OpenEden Boosted USDC'],
-    selector: SELECTORS.REDEEM,
-    description: "Morpho Clearstar Reactor OpenEden Boosted USDC - withdraw()",
-  },
-  
-  // Gauntlet USDC Prime
-  {
-    target: MORPHO_POOLS['Gauntlet USDC Prime'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho Gauntlet USDC Prime - deposit()",
-  },
-  {
-    target: MORPHO_POOLS['Gauntlet USDC Prime'],
-    selector: SELECTORS.REDEEM,
-    description: "Morpho Gauntlet USDC Prime - withdraw()",
-  },
-  
-  // Gauntlet USDC Core
-  {
-    target: MORPHO_POOLS['Gauntlet USDC Core'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho Gauntlet USDC Core - deposit()",
-  },
-  {
-    target: MORPHO_POOLS['Gauntlet USDC Core'],
-    selector: SELECTORS.REDEEM,
-    description: "Morpho Gauntlet USDC Core - withdraw()",
-  },
-  
-  // Gauntlet USDC Frontier
-  {
-    target: MORPHO_POOLS['Gauntlet USDC Frontier'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho Gauntlet USDC Frontier - deposit()",
-  },
-  {
-    target: MORPHO_POOLS['Gauntlet USDC Frontier'],
-    selector: SELECTORS.REDEEM,
-    description: "Morpho Gauntlet USDC Frontier - withdraw()",
-  },
-  
-  // // ExtrafiXLend USDC
-  {
-    target: MORPHO_POOLS['ExtrafiXLend USDC'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho ExtrafiXLend USDC - deposit()",
-  },
-  {
-    target: MORPHO_POOLS['ExtrafiXLend USDC'],
-    selector: SELECTORS.REDEEM,
-    description: "Morpho ExtrafiXLend USDC - withdraw()",
-  },
-  {
-    target: MORPHO_POOLS['ExtrafiXLend USDC'],
-    selector: SELECTORS.ERC20_APPROVE,
-    description: "Morpho ExtrafiXLend USDC - approve()",
-  },
-  
-  // Steakhouse USDC
-  {
-    target: MORPHO_POOLS['Steakhouse USDC'],
-    selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Morpho Steakhouse USDC - deposit()",
-  },
-  {
-    target: MORPHO_POOLS['Steakhouse USDC'],
-    selector: SELECTORS.REDEEM,
-    description: "Morpho Steakhouse USDC - withdraw()",
   },
 ];
 

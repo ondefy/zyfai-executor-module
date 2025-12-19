@@ -239,11 +239,6 @@ export const whitelistConfig: WhitelistItem[] = [
     selector: SELECTORS.ERC4626_DEPOSIT,
     description: "Fluid Pool USDC - deposit()",
   },
-  // {
-  //   target: FLUID_POOLS.USDC,
-  //   selector: SELECTORS.ERC4626_WITHDRAW,
-  //   description: "Fluid Pool USDC - withdraw()",
-  // },
   {
     target: FLUID_POOLS.USDC,
     selector: SELECTORS.REDEEM,
@@ -258,11 +253,6 @@ export const whitelistConfig: WhitelistItem[] = [
     selector: SELECTORS.ERC4626_DEPOSIT,
     description: "Spark Pool USDC - deposit()",
   },
-  // {
-  //   target: SPARK_POOLS.USDC,
-  //   selector: SELECTORS.ERC4626_WITHDRAW,
-  //   description: "Spark Pool USDC - withdraw()",
-  // },
   {
     target: SPARK_POOLS.USDC,
     selector: SELECTORS.REDEEM,
@@ -283,31 +273,69 @@ export const whitelistConfig: WhitelistItem[] = [
     description: "Compound V3 Pool USDC - withdraw()",
   },
   
-  
   // ========================================
-  // HARVEST POOL FUNCTIONS
+  // MORPHO POOL FUNCTIONS (Arbitrum)
+  // Only approve is needed for Morpho vaults per the provided list
   // ========================================
-  // USDC - Moonwell (uses standard ERC4626 deposit/withdraw)
+  {
+    target: ARBITRUM_MORPHO_POOLS['Gauntlet USDC Prime'] as Address,
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "Morpho Gauntlet USDC Prime - approve()",
+  },
+  {
+    target: ARBITRUM_MORPHO_POOLS['Gauntlet USDC Core'] as Address,
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "Morpho Gauntlet USDC Core - approve()",
+  },
+  {
+    target: ARBITRUM_MORPHO_POOLS['Steakhouse Prime USDC'] as Address,
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "Morpho Steakhouse Prime USDC - approve()",
+  },
+  {
+    target: ARBITRUM_MORPHO_POOLS['Hyperithm USDC'] as Address,
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "Morpho Hyperithm USDC - approve()",
+  },
+  {
+    target: ARBITRUM_MORPHO_POOLS['Steakhouse High Yield USDC'] as Address,
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "Morpho Steakhouse High Yield USDC - approve()",
+  },
+  {
+    target: ARBITRUM_MORPHO_POOLS['MEV Capital USDC'] as Address,
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "Morpho MEV Capital USDC - approve()",
+  },
+];
+
+/**
+ * REMOVE WHITELIST CONFIGURATION
+ * 
+ * Items to be removed from the whitelist.
+ * These are items that were previously whitelisted but are no longer needed
+ * based on the updated requirements.
+ */
+export const removeWhitelistConfig: WhitelistItem[] = [
+  // ========================================
+  // HARVEST POOL FUNCTIONS (To Remove)
+  // Not in the provided list - should be removed
+  // ========================================
   {
     target: HARVEST_POOLS['USDC - Autopilot'],
     selector: SELECTORS.ERC4626_DEPOSIT,
-    description: "Harvest USDC - Moonwell - deposit()",
+    description: "Harvest USDC - Autopilot - deposit()",
   },
-  // {
-  //   target: HARVEST_POOLS['USDC - Autopilot'],
-  //   selector: SELECTORS.ERC4626_WITHDRAW,
-  //   description: "Harvest USDC - Moonwell - withdraw()",
-  // },
   {
     target: HARVEST_POOLS['USDC - Autopilot'],
     selector: SELECTORS.REDEEM,
-    description: "Harvest USDC - Moonwell - redeem()",
+    description: "Harvest USDC - Autopilot - redeem()",
   },
   
-  // // ========================================
-  // // MORPHO POOL FUNCTIONS
-  // // ========================================
-  // Universal - USDC
+  // ========================================
+  // MORPHO POOL DEPOSIT/REDEEM (To Remove)
+  // Only approve should remain, deposit/redeem should be removed
+  // ========================================
   {
     target: ARBITRUM_MORPHO_POOLS['Gauntlet USDC Prime'] as Address,
     selector: SELECTORS.ERC4626_DEPOSIT,
@@ -318,7 +346,6 @@ export const whitelistConfig: WhitelistItem[] = [
     selector: SELECTORS.REDEEM,
     description: "Morpho Gauntlet USDC Prime - redeem()",
   },
-  
   {
     target: ARBITRUM_MORPHO_POOLS['Gauntlet USDC Core'] as Address,
     selector: SELECTORS.ERC4626_DEPOSIT,
@@ -329,7 +356,6 @@ export const whitelistConfig: WhitelistItem[] = [
     selector: SELECTORS.REDEEM,
     description: "Morpho Gauntlet USDC Core - redeem()",
   },
-
   {
     target: ARBITRUM_MORPHO_POOLS['Steakhouse Prime USDC'] as Address,
     selector: SELECTORS.ERC4626_DEPOSIT,
@@ -340,7 +366,6 @@ export const whitelistConfig: WhitelistItem[] = [
     selector: SELECTORS.REDEEM,
     description: "Morpho Steakhouse Prime USDC - redeem()",
   },
-  
   {
     target: ARBITRUM_MORPHO_POOLS['MEV Capital USDC'] as Address,
     selector: SELECTORS.ERC4626_DEPOSIT,
@@ -351,7 +376,6 @@ export const whitelistConfig: WhitelistItem[] = [
     selector: SELECTORS.REDEEM,
     description: "Morpho MEV Capital USDC - redeem()",
   },
-
   {
     target: ARBITRUM_MORPHO_POOLS['Steakhouse High Yield USDC'] as Address,
     selector: SELECTORS.ERC4626_DEPOSIT,
@@ -362,7 +386,6 @@ export const whitelistConfig: WhitelistItem[] = [
     selector: SELECTORS.REDEEM,
     description: "Morpho Steakhouse High Yield USDC - redeem()",
   },
-
   {
     target: ARBITRUM_MORPHO_POOLS['Hyperithm USDC'] as Address,
     selector: SELECTORS.ERC4626_DEPOSIT,
@@ -373,11 +396,10 @@ export const whitelistConfig: WhitelistItem[] = [
     selector: SELECTORS.REDEEM,
     description: "Morpho Hyperithm USDC - redeem()",
   },
-
   {
     target: '0xb98c948cfa24072e58935bc004a8a7b376ae746a' as Address,
     selector: SELECTORS.MORPHO_ADAPTER_ERC4626_REDEEM,
-    description: "Morpho Adapter (Base) - erc4626Redeem()",
+    description: "Morpho Adapter (Base) - erc4626Redeem() - Wrong chain",
   },
 ];
 
