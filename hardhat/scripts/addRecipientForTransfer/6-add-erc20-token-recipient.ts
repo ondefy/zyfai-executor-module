@@ -16,13 +16,10 @@
 import { encodeFunctionData, getAddress, parseAbi } from 'viem';
 import dotenv from "dotenv";
 import { join } from "path";
-import {
-  createClients,
-  getRegistryAddress,
-} from './whitelist/utils';
+import { createBaseClients, getBaseRegistryAddress } from '../utils/utils';
 
 // Load environment variables
-dotenv.config({ path: join(__dirname, "..", ".env") });
+dotenv.config({ path: join(__dirname, "..", "..", ".env") });
 
 /**
  * TargetRegistry ABI - ERC20 recipient functions
@@ -50,8 +47,8 @@ async function main() {
   console.log("=============================\n");
 
   // Initialize clients and get registry address
-  const { publicClient, walletClient, account } = createClients();
-  const registryAddress = getRegistryAddress();
+  const { publicClient, walletClient, account } = createBaseClients();
+  const registryAddress = getBaseRegistryAddress();
 
   console.log("Configuration:");
   console.log("  Registry address:", registryAddress);

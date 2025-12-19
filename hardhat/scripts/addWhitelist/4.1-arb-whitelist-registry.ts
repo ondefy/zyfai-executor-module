@@ -1,10 +1,10 @@
 /**
- * Add Targets and Selectors to Whitelist (Plasma Chain)
+ * Add Targets and Selectors to Whitelist
  * 
- * This script adds target+selector combinations to the TargetRegistry whitelist on Plasma.
+ * This script adds target+selector combinations to the TargetRegistry whitelist.
  * 
  * USAGE:
- * 1. Edit hardhat/scripts/whitelist/plasmadata.ts to configure what you want to whitelist
+ * 1. Edit hardhat/scripts/whitelist/data.ts to configure what you want to whitelist
  * 2. Comment out items that are already whitelisted (for history)
  * 3. Run this script
  * 
@@ -17,31 +17,31 @@
 import { encodeFunctionData, getAddress } from 'viem';
 import dotenv from "dotenv";
 import { join } from "path";
-import { whitelistConfig } from './whitelist/plasmadata';
+import { whitelistConfig } from '../protocolData/arbdata';
 
 import {
-  createPlasmaClients,
-  getPlasmaRegistryAddress,
+  createArbitrumClients,
+  getArbitrumRegistryAddress,
   checkWhitelistStatus,
   displayWhitelistStatus,
   filterByStatus,
   TARGET_REGISTRY_ABI,
-} from './whitelist/utils';
+} from '../utils/utils';
 
 
 // Load environment variables
-dotenv.config({ path: join(__dirname, "..", ".env") });
+dotenv.config({ path: join(__dirname, "..", "..", ".env") });
 
 async function main() {
-  console.log("🚀 Add to Whitelist (Plasma Chain)");
-  console.log("===================================\n");
+  console.log("🚀 Add to Whitelist (Arbitrum Chain)");
+  console.log("=====================================\n");
 
   // Initialize clients and get registry address
-  const { publicClient, walletClient, account } = createPlasmaClients();
-  const registryAddress = getPlasmaRegistryAddress();
+  const { publicClient, walletClient, account } = createArbitrumClients();
+  const registryAddress = getArbitrumRegistryAddress();
 
   console.log("Configuration:");
-  console.log("  Chain: Plasma (9745)");
+  console.log("  Chain: Arbitrum (42161)");
   console.log("  Registry address:", registryAddress);
   console.log("  Account address:", account.address);
   console.log("  Items to process:", whitelistConfig.length);
@@ -61,7 +61,7 @@ async function main() {
   
   if (notWhitelisted.length === 0) {
     console.log("\n✅ All items are already whitelisted!");
-    console.log("   If you want to add new items, edit hardhat/scripts/whitelist/plasmadata.ts");
+    console.log("   If you want to add new items, edit hardhat/scripts/whitelist/arbdata.ts");
     return;
   }
   console.log("Not whitelisted items:", notWhitelisted.length);
@@ -150,4 +150,3 @@ main()
     console.error("\n❌ Fatal error:", error);
     process.exit(1);
   });
-

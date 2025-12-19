@@ -17,7 +17,7 @@
 import { encodeFunctionData, getAddress } from 'viem';
 import dotenv from "dotenv";
 import { join } from "path";
-import { whitelistConfig } from './whitelist/sonicdata';
+import { whitelistConfig } from '../protocolData/sonicdata';
 
 import {
   createSonicClients,
@@ -26,11 +26,11 @@ import {
   displayWhitelistStatus,
   filterByStatus,
   TARGET_REGISTRY_ABI,
-} from './whitelist/utils';
+} from '../utils/utils';
 
 
 // Load environment variables
-dotenv.config({ path: join(__dirname, "..", ".env") });
+dotenv.config({ path: join(__dirname, "..", "..", ".env") });
 
 async function main() {
   console.log("🚀 Add to Whitelist (Sonic Chain)");

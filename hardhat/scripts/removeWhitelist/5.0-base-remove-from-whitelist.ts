@@ -20,7 +20,7 @@
 import { encodeFunctionData, getAddress } from 'viem';
 import dotenv from "dotenv";
 import { join } from "path";
-import { removeWhitelistConfig } from './whitelist/basedata';
+import { removeWhitelistConfig } from '../protocolData/basedata';
 import {
   createBaseClients,
   getBaseRegistryAddress,
@@ -28,10 +28,10 @@ import {
   displayWhitelistStatus,
   filterByStatus,
   TARGET_REGISTRY_ABI,
-} from './whitelist/utils';
+} from '../utils/utils';
 
 // Load environment variables
-dotenv.config({ path: join(__dirname, "..", ".env") });
+dotenv.config({ path: join(__dirname, "..", "..", ".env") });
 
 async function main() {
   console.log("🗑️  Remove from Whitelist (Base Chain)");

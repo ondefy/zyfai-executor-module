@@ -1,99 +1,100 @@
 /**
- * Remove Targets and Selectors from Whitelist (Arbitrum Chain)
+ * Add Targets and Selectors to Whitelist (Plasma Chain)
  * 
- * This script removes target+selector combinations from the TargetRegistry whitelist on Arbitrum.
+ * This script adds target+selector combinations to the TargetRegistry whitelist on Plasma.
  * 
  * USAGE:
- * 1. Edit hardhat/scripts/whitelist/arbdata.ts to configure what you want to remove in removeWhitelistConfig
- * 2. The script will use removeWhitelistConfig - you can add/remove items as needed
+ * 1. Edit hardhat/scripts/whitelist/plasmadata.ts to configure what you want to whitelist
+ * 2. Comment out items that are already whitelisted (for history)
  * 3. Run this script
  * 
  * The script will:
  * - Check current whitelist status of all items
- * - Only remove items that ARE currently whitelisted
+ * - Only add items that are NOT already whitelisted
  * - Show detailed status before and after
- * 
- * NOTE: Use removeWhitelistConfig in arbdata.ts for consistency. Add items you want to remove there.
  */
 
 import { encodeFunctionData, getAddress } from 'viem';
 import dotenv from "dotenv";
 import { join } from "path";
-import { removeWhitelistConfig } from './whitelist/arbdata';
+import { whitelistConfig } from '../protocolData/plasmadata';
+
 import {
-  createArbitrumClients,
-  getArbitrumRegistryAddress,
+  createPlasmaClients,
+  getPlasmaRegistryAddress,
   checkWhitelistStatus,
   displayWhitelistStatus,
   filterByStatus,
   TARGET_REGISTRY_ABI,
-} from './whitelist/utils';
+} from '../utils/utils';
+
 
 // Load environment variables
-dotenv.config({ path: join(__dirname, "..", ".env") });
+dotenv.config({ path: join(__dirname, "..", "..", ".env") });
 
 async function main() {
-  console.log("🗑️  Remove from Whitelist (Arbitrum Chain)");
-  console.log("========================================\n");
+  console.log("🚀 Add to Whitelist (Plasma Chain)");
+  console.log("===================================\n");
 
   // Initialize clients and get registry address
-  const { publicClient, walletClient, account } = createArbitrumClients();
-  const registryAddress = getArbitrumRegistryAddress();
+  const { publicClient, walletClient, account } = createPlasmaClients();
+  const registryAddress = getPlasmaRegistryAddress();
 
   console.log("Configuration:");
-  console.log("  Chain: Arbitrum (42161)");
+  console.log("  Chain: Plasma (9745)");
   console.log("  Registry address:", registryAddress);
   console.log("  Account address:", account.address);
-  console.log("  Items to process:", removeWhitelistConfig.length);
+  console.log("  Items to process:", whitelistConfig.length);
 
   // Check current whitelist status
   console.log("\n🔍 Checking current whitelist status...");
   const statuses = await checkWhitelistStatus(
     publicClient,
     registryAddress,
-    removeWhitelistConfig
+    whitelistConfig
   );
 
   displayWhitelistStatus(statuses);
 
-  // Filter to only whitelisted items (those we can remove)
-  const currentlyWhitelisted = filterByStatus(statuses, true);
+  // Filter out already whitelisted items
+  const notWhitelisted = filterByStatus(statuses, false);
   
-  if (currentlyWhitelisted.length === 0) {
-    console.log("\n✅ No items are currently whitelisted from this configuration!");
-    console.log("   If you want to remove items, make sure they are in removeWhitelistConfig in arbdata.ts");
+  if (notWhitelisted.length === 0) {
+    console.log("\n✅ All items are already whitelisted!");
+    console.log("   If you want to add new items, edit hardhat/scripts/whitelist/plasmadata.ts");
     return;
   }
+  console.log("Not whitelisted items:", notWhitelisted.length);
 
-  // Prepare arrays for batch operation (only items that ARE whitelisted)
+  // Prepare arrays for batch operation (only items NOT whitelisted)
   // Ensure all addresses are properly checksummed (EIP-55)
-  const targetsToRemove = currentlyWhitelisted.map(s => getAddress(s.item.target));
-  const selectorsToRemove = currentlyWhitelisted.map(s => s.item.selector);
+  const targetsToAdd = notWhitelisted.map(s => getAddress(s.item.target));
+  const selectorsToAdd = notWhitelisted.map(s => s.item.selector);
 
-  console.log(`\n📋 Preparing to remove ${currentlyWhitelisted.length} item(s) from whitelist:`);
-  currentlyWhitelisted.forEach((status, index) => {
+  console.log(`\n📋 Preparing to whitelist ${notWhitelisted.length} item(s):`);
+  notWhitelisted.forEach((status, index) => {
     console.log(`  ${index + 1}. ${status.item.description}`);
     console.log(`     Target: ${status.item.target}`);
     console.log(`     Selector: ${status.item.selector}`);
   });
 
-  // Confirmation prompt
-  console.log("\n⚠️  WARNING: You are about to REMOVE these items from the whitelist.");
-  console.log("   This operation is immediate and cannot be easily undone.");
+  // Confirmation prompt (in production, you might want more sophisticated confirmation)
+  console.log("\n⚠️  WARNING: You are about to add these items to the whitelist.");
+  console.log("   This operation is immediate (no timelock).");
   console.log("   Press Ctrl+C to cancel, or wait 5 seconds to continue...\n");
   
   await new Promise(resolve => setTimeout(resolve, 5000));
 
   try {
-    // Execute batch remove from whitelist
-    console.log("🚀 Sending transaction to remove items from whitelist...");
+    // Execute batch add to whitelist
+    console.log("🚀 Sending transaction to add items to whitelist...");
     
     const txHash = await walletClient.sendTransaction({
       to: registryAddress,
       data: encodeFunctionData({
         abi: TARGET_REGISTRY_ABI,
-        functionName: 'removeFromWhitelist',
-        args: [targetsToRemove, selectorsToRemove],
+        functionName: 'addToWhitelist',
+        args: [targetsToAdd, selectorsToAdd],
       }),
     });
 
@@ -115,17 +116,17 @@ async function main() {
     const newStatuses = await checkWhitelistStatus(
       publicClient,
       registryAddress,
-      currentlyWhitelisted.map(s => s.item)
+      notWhitelisted.map(s => s.item)
     );
 
     displayWhitelistStatus(newStatuses);
 
-    // Check if all were successfully removed
-    const allRemoved = newStatuses.every(s => !s.isWhitelisted);
-    if (allRemoved) {
-      console.log("\n✅✅ All items successfully removed from whitelist!");
+    // Check if all were successfully added
+    const allAdded = newStatuses.every(s => s.isWhitelisted);
+    if (allAdded) {
+      console.log("\n✅✅ All items successfully added to whitelist!");
     } else {
-      console.log("\n⚠️  Warning: Some items may still be whitelisted. Check transaction logs.");
+      console.log("\n⚠️  Warning: Some items may not have been added. Check transaction logs.");
     }
 
   } catch (error: any) {
