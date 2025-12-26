@@ -349,6 +349,17 @@ export const whitelistConfig: WhitelistItem[] = [
     selector: SELECTORS.ERC20_APPROVE,
     description: "Morpho Steakhouse USDC - approve()",
   },
+
+  {
+    target: HARVEST_POOLS['USDC - 40 Acres'],
+    selector: SELECTORS.ERC4626_DEPOSIT,
+    description: "Harvest USDC - 40 Acres - deposit()",
+  },
+  {
+    target: HARVEST_POOLS['USDC - 40 Acres'],
+    selector: SELECTORS.REDEEM,
+    description: "Harvest USDC - 40 Acres - redeem()",
+  },
 ];
 
 /**
