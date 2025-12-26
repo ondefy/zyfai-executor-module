@@ -18,9 +18,15 @@ import { Address } from 'viem';
 
 /**
  * ERC20 Token Addresses (Base Chain)
+ * Expanded for additional protocols.
  */
 export const TOKENS = {
   USDC: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as Address,
+  EXTRA: '0x2dAD3a13ef0C6366220f989157009e501e7938F8' as Address,      // Extra Protocol
+  Morpho: '0xBAa5CC21fd487B8Fcc2F632f3F4E8D37262a0842' as Address,   // Morpho
+  Compound: '0x9e1028F5F1D5eDE59748FFceE5532509976840E0' as Address, // Compound
+  Seamless: '0x1C7a460413dD4e964f96D8dFC56E7223cE88CD85' as Address, // Seamless
+  Fluid: '0x61e030a56d33e8260fdd81f03b162a79fe3449cd' as Address,    // Fluid (listed twice in input, only once needed)
 } as const;
 
 /**
@@ -98,6 +104,11 @@ export const MORPHO_POOLS = {
  */
 export const CONTRACTS = {
   USDC: TOKENS.USDC,
+  EXTRA: TOKENS.EXTRA,
+  Morpho: TOKENS.Morpho,
+  Compound: TOKENS.Compound,
+  Seamless: TOKENS.Seamless,
+  Fluid: TOKENS.Fluid,
   AAVE_POOL_USDC: AAVE_POOLS.USDC,
   FLUID_POOL_USDC: FLUID_POOLS.USDC,
   SPARK_POOL_USDC: SPARK_POOLS.USDC,
@@ -185,6 +196,32 @@ export const whitelistConfig: WhitelistItem[] = [
     target: TOKENS.USDC,
     selector: SELECTORS.ERC20_TRANSFER,
     description: "USDC transfer()",
+  },
+
+  {
+    target: TOKENS.EXTRA,
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "EXTRA approve()",
+  },
+  {
+    target: TOKENS.Morpho,
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "Morpho approve()",
+  },
+  {
+    target: TOKENS.Compound,
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "Compound approve()",
+  },
+  {
+    target: TOKENS.Seamless,
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "Seamless approve()",
+  },
+  {
+    target: TOKENS.Fluid,
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "Fluid approve()",
   },
   
   // ========================================

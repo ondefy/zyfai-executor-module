@@ -1,7 +1,7 @@
 /**
- * Add ERC20 Token Recipient to TargetRegistry
+ * Add ERC20 Token Recipient to TargetRegistry (Plasma)
  * 
- * This script adds authorized recipient(s) for a specific ERC20 token to the TargetRegistry.
+ * This script adds authorized recipient(s) for a specific ERC20 token to the TargetRegistry on Plasma.
  * 
  * USAGE:
  * 1. Edit the TOKEN and RECIPIENTS constants below to configure what you want to authorize
@@ -16,7 +16,7 @@
 import { encodeFunctionData, getAddress, parseAbi } from 'viem';
 import dotenv from "dotenv";
 import { join } from "path";
-import { createBaseClients, getBaseRegistryAddress } from '../utils/utils';
+import { createPlasmaClients, getPlasmaRegistryAddress } from '../utils/utils';
 
 // Load environment variables
 dotenv.config({ path: join(__dirname, "..", "..", ".env") });
@@ -34,32 +34,29 @@ const TARGET_REGISTRY_ABI = parseAbi([
  * Configuration
  * Edit these values to configure what you want to authorize
  */
-const TOKEN = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as const; // USDC on Base
-// const TOKEN = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831' as const; // USDC on Arbitrum
-const BASE_RECIPIENTS = [
-  // '0x62be78705295ca9ffdac410b4a9b6101983a7c3b' as const,
-  // '0x23479229e52Ab6aaD312D0B03DF9F33B46753B5e' as const,
-  '0xb98c948CFA24072e58935BC004a8A7b376AE746A' as const,
+const TOKEN = '0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb' as const; // USDT0 on Plasma
+const PLASMA_RECIPIENTS = [
+  '0x62be78705295ca9ffdac410b4a9b6101983a7c3b' as const,
 ];
 
 async function main() {
-  console.log("🚀 Add ERC20 Token Recipient");
-  console.log("=============================\n");
+  console.log("🚀 Add ERC20 Token Recipient (Plasma)");
+  console.log("======================================\n");
 
   // Initialize clients and get registry address
-  const { publicClient, walletClient, account } = createBaseClients();
-  const registryAddress = getBaseRegistryAddress();
+  const { publicClient, walletClient, account } = createPlasmaClients();
+  const registryAddress = getPlasmaRegistryAddress();
 
   console.log("Configuration:");
   console.log("  Registry address:", registryAddress);
   console.log("  Account address:", account.address);
   console.log("  Token address:", TOKEN);
-  console.log("  Recipients to process:", BASE_RECIPIENTS.length);
+  console.log("  Recipients to process:", PLASMA_RECIPIENTS.length);
 
   // Check current authorization status
   console.log("\n🔍 Checking current authorization status...");
   const statuses = await Promise.all(
-    BASE_RECIPIENTS.map(async (recipient) => {
+    PLASMA_RECIPIENTS.map(async (recipient) => {
       const checksummedRecipient = getAddress(recipient);
       const isAuthorized = await publicClient.readContract({
         address: registryAddress,

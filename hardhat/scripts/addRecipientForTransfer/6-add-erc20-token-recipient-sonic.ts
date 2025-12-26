@@ -1,7 +1,7 @@
 /**
- * Add ERC20 Token Recipient to TargetRegistry (Arbitrum)
+ * Add ERC20 Token Recipient to TargetRegistry (Sonic)
  * 
- * This script adds authorized recipient(s) for a specific ERC20 token to the TargetRegistry on Arbitrum.
+ * This script adds authorized recipient(s) for a specific ERC20 token to the TargetRegistry on Sonic.
  * 
  * USAGE:
  * 1. Edit the TOKEN and RECIPIENTS constants below to configure what you want to authorize
@@ -16,7 +16,7 @@
 import { encodeFunctionData, getAddress, parseAbi } from 'viem';
 import dotenv from "dotenv";
 import { join } from "path";
-import { createArbitrumClients, getArbitrumRegistryAddress } from '../utils/utils';
+import { createSonicClients, getSonicRegistryAddress } from '../utils/utils';
 
 // Load environment variables
 dotenv.config({ path: join(__dirname, "..", "..", ".env") });
@@ -34,30 +34,29 @@ const TARGET_REGISTRY_ABI = parseAbi([
  * Configuration
  * Edit these values to configure what you want to authorize
  */
-const TOKEN = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831' as const; // USDC on Arbitrum
-const ARB_RECIPIENTS = [
-  '0x9954afb60bb5a222714c478ac86990f221788b88' as const,
+const TOKEN = '0x29219dd400f2Bf60E5a23d13Be72B486D4038894' as const; // USDC on Sonic
+const SONIC_RECIPIENTS = [
   '0x62be78705295ca9ffdac410b4a9b6101983a7c3b' as const,
 ];
 
 async function main() {
-  console.log("🚀 Add ERC20 Token Recipient (Arbitrum)");
-  console.log("========================================\n");
+  console.log("🚀 Add ERC20 Token Recipient (Sonic)");
+  console.log("======================================\n");
 
   // Initialize clients and get registry address
-  const { publicClient, walletClient, account } = createArbitrumClients();
-  const registryAddress = getArbitrumRegistryAddress();
+  const { publicClient, walletClient, account } = createSonicClients();
+  const registryAddress = getSonicRegistryAddress();
 
   console.log("Configuration:");
   console.log("  Registry address:", registryAddress);
   console.log("  Account address:", account.address);
   console.log("  Token address:", TOKEN);
-  console.log("  Recipients to process:", ARB_RECIPIENTS.length);
+  console.log("  Recipients to process:", SONIC_RECIPIENTS.length);
 
   // Check current authorization status
   console.log("\n🔍 Checking current authorization status...");
   const statuses = await Promise.all(
-    ARB_RECIPIENTS.map(async (recipient) => {
+    SONIC_RECIPIENTS.map(async (recipient) => {
       const checksummedRecipient = getAddress(recipient);
       const isAuthorized = await publicClient.readContract({
         address: registryAddress,

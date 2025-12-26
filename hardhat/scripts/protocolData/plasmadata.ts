@@ -21,6 +21,7 @@ import { Address } from 'viem';
  */
 export const TOKENS = {
   USDT0: '0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb' as Address, // Update with actual USDT0 address if needed
+  WXPL: '0x6100E367285b01F48D07953803A2d8dCA5D19873' as Address,
 } as const;
 
 /**
@@ -86,6 +87,11 @@ export const whitelistConfig: WhitelistItem[] = [
   // ========================================
   // ERC20 TOKEN FUNCTIONS
   // ========================================
+  {
+    target: TOKENS.WXPL,
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "WXPL approve()",
+  },
   {
     target: TOKENS.USDT0,
     selector: SELECTORS.ERC20_APPROVE,

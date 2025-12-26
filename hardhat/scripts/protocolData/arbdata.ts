@@ -21,6 +21,9 @@ import { Address } from 'viem';
  */
 export const TOKENS = {
   USDC: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831' as Address,
+  ARB: '0x912CE59144191C1204E64559FE8253a0e49E6548' as Address,
+  Morpho: '0x40BD670A58238e6E230c430BBb5cE6ec0d40df48' as Address,
+  Compound: '0x354a6da3fcde098f8389cad84b0182725c6c91de' as Address,
 } as const;
 
 /**
@@ -79,6 +82,9 @@ export const ARBITRUM_MORPHO_POOLS = {
  */
 export const CONTRACTS = {
   USDC: TOKENS.USDC,
+  ARB: TOKENS.ARB,
+  Morpho: TOKENS.Morpho,
+  Compound: TOKENS.Compound,
   AAVE_POOL_USDC: AAVE_POOLS.USDC,
   FLUID_POOL_USDC: FLUID_POOLS.USDC,
   SPARK_POOL_USDC: SPARK_POOLS.USDC,
@@ -166,6 +172,22 @@ export const whitelistConfig: WhitelistItem[] = [
     target: TOKENS.USDC,
     selector: SELECTORS.ERC20_TRANSFER,
     description: "USDC transfer()",
+  },
+
+  {
+    target: TOKENS.ARB,
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "ARB approve()",
+  },
+  {
+    target: TOKENS.Morpho,
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "Morpho approve()",
+  },
+  {
+    target: TOKENS.Compound,
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "Compound approve()",
   },
   
   // ========================================
