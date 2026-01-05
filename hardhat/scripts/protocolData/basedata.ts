@@ -397,6 +397,17 @@ export const whitelistConfig: WhitelistItem[] = [
     selector: SELECTORS.REDEEM,
     description: "Harvest USDC - 40 Acres - redeem()",
   },
+
+  {
+    target: MOONWELL_POOLS.USDC,
+    selector: SELECTORS.MOONWELL_MINT,
+    description: "Moonwell Pool USDC - mint()",
+  },
+  {
+    target: MOONWELL_POOLS.USDC,
+    selector: SELECTORS.MOONWELL_REDEEM,
+    description: "Moonwell Pool USDC - redeem()",
+  },
 ];
 
 /**
@@ -420,20 +431,6 @@ export const removeWhitelistConfig: WhitelistItem[] = [
     target: FLUID_POOLS.USDC,
     selector: SELECTORS.ERC4626_WITHDRAW,
     description: "Fluid Pool USDC - withdraw()",
-  },
-  
-  // ========================================
-  // MOONWELL POOL FUNCTIONS (To Remove)
-  // ========================================
-  {
-    target: MOONWELL_POOLS.USDC,
-    selector: SELECTORS.MOONWELL_MINT,
-    description: "Moonwell Pool USDC - mint()",
-  },
-  {
-    target: MOONWELL_POOLS.USDC,
-    selector: SELECTORS.MOONWELL_REDEEM,
-    description: "Moonwell Pool USDC - redeem()",
   },
   
   // ========================================
