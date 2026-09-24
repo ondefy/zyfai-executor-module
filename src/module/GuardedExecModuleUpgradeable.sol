@@ -14,10 +14,10 @@ import { TargetRegistry } from "../registry/TargetRegistry.sol";
  * @author ZyFAI
  * @notice Executor module that allows session keys to execute whitelisted DeFi operations
  *         while maintaining smart account context. Uses UUPS upgradeable pattern.
- * @dev Session keys can execute batch operations on whitelisted target+selector combinations.
- *      All executions maintain smart account context (msg.sender = smart account).
- *      Security: Whitelist validation, ERC20 transfer restrictions, pausable, upgradeable,
- *      two-step ownership transfer for enhanced security.
+     * @dev Session keys can execute batch operations on whitelisted target+selector combinations.
+     *      All executions maintain smart account context (msg.sender = smart account).
+     *      Security: Whitelist validation, ERC20 transfer/approve restrictions,
+     *      Morpho setAuthorization restrictions, pausable, upgradeable, two-step ownership.
  */
 contract GuardedExecModuleUpgradeable is 
     ERC7579ExecutorBase,
@@ -40,6 +40,15 @@ contract GuardedExecModuleUpgradeable is
      * @dev Used to identify ERC20 approve calls for additional authorization checks
      */
     bytes4 private constant APPROVE_SELECTOR = IERC20.approve.selector;
+
+    /**
+     * @notice Morpho Blue `setAuthorization(address,bool)` selector (0xeecea000)
+     * @dev Same ABI shape as ERC20 approve. A leaked session must not authorize an arbitrary
+     *      address (that would let an attacker Morpho.withdraw onBehalf=Safe). Pin `authorized`
+     *      to a registry target — the Adapter — like approve pins spender.
+     */
+    bytes4 private constant SET_AUTHORIZATION_SELECTOR =
+        bytes4(keccak256("setAuthorization(address,bool)"));
 
     /**
      * @notice Minimum calldata length required to extract function selector
@@ -131,6 +140,11 @@ contract GuardedExecModuleUpgradeable is
     /// @param spender The unauthorized spender address
     error UnauthorizedERC20Approve(address token, address spender);
 
+    /// @notice Thrown when setAuthorization is attempted with an unauthorized address
+    /// @param target The Morpho (or same-selector) contract
+    /// @param authorized The address the session tried to authorize
+    error UnauthorizedSetAuthorization(address target, address authorized);
+
     /// @notice Thrown when calldata is invalid (too short or malformed)
     error InvalidCalldata();
 
@@ -188,7 +202,7 @@ contract GuardedExecModuleUpgradeable is
      * @return Version string
      */
     function version() external pure returns (string memory) {
-        return "2.0.0";
+        return "2.2.0";
     }
 
     /**
@@ -306,6 +320,8 @@ contract GuardedExecModuleUpgradeable is
                 _validateERC20Transfer(target, callData, callDataLength, reg);
             } else if (selector == APPROVE_SELECTOR) {
                 _validateERC20Approve(target, callData, callDataLength, reg);
+            } else if (selector == SET_AUTHORIZATION_SELECTOR) {
+                _validateSetAuthorization(target, callData, callDataLength, reg);
             }
             
             unchecked {
@@ -406,6 +422,28 @@ contract GuardedExecModuleUpgradeable is
         // Using auto-generated getter from public mapping to avoid duplicate bytecode
         if (!reg.whitelistedTargets(spender)) {
             revert UnauthorizedERC20Approve(token, spender);
+        }
+    }
+
+    /**
+     * @notice Validate Morpho `setAuthorization(authorized, newIsAuthorized)`
+     * @dev Same pin as ERC20 approve: `authorized` must already be a registry target
+     *      (the Adapter). No new storage. Calldata: 4 + 32 + 32 = 68 bytes.
+     */
+    function _validateSetAuthorization(
+        address target,
+        bytes calldata callData,
+        uint256 callDataLength,
+        TargetRegistry reg
+    )
+        internal
+        view
+    {
+        if (callDataLength != MIN_TRANSFER_LENGTH) revert InvalidCalldata();
+
+        address authorized = address(bytes20(callData[16:36]));
+        if (!reg.whitelistedTargets(authorized)) {
+            revert UnauthorizedSetAuthorization(target, authorized);
         }
     }
 }

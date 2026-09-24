@@ -64,6 +64,8 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     bytes4 internal constant SWAP_SELECTOR = MockDeFiPool.swap.selector;
     bytes4 internal constant TRANSFER_SELECTOR = IERC20.transfer.selector;
     bytes4 internal constant APPROVE_SELECTOR = IERC20.approve.selector;
+    bytes4 internal constant SET_AUTHORIZATION_SELECTOR =
+        bytes4(keccak256("setAuthorization(address,bool)"));
 
     /**
      * @notice Helper function to convert arrays to Execution[] for testing
@@ -323,7 +325,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         
         // Check version
         string memory version = guardedModule.version();
-        assertEq(version, "2.0.0", "Version should be 2.0.0");
+        assertEq(version, "2.2.0", "Version should be 2.2.0");
         
         // Check name
         string memory name = guardedModule.name();
@@ -1206,6 +1208,66 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     /**
      * @notice Test: Cannot initialize with zero registry address
      */
+    function test_SetAuthorizationWithWhitelistedAuthorized() public {
+        vm.startPrank(registryOwner);
+        address[] memory morphoTargets = new address[](1);
+        bytes4[] memory morphoSelectors = new bytes4[](1);
+        morphoTargets[0] = address(aavePool);
+        morphoSelectors[0] = SET_AUTHORIZATION_SELECTOR;
+        registry.addToWhitelist(morphoTargets, morphoSelectors);
+        vm.stopPrank();
+
+        address[] memory targets = new address[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
+        targets[0] = address(aavePool);
+        calldatas[0] = abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, address(uniswapPool), true);
+        values[0] = 0;
+
+        Execution[] memory executions = _toExecutions(targets, calldatas, values);
+
+        instance.exec({
+            target: address(guardedModule),
+            value: 0,
+            callData: abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.executeGuardedBatch.selector, executions
+            )
+        });
+
+        assertEq(aavePool.lastCaller(), smartAccount, "msg.sender should be the smart account");
+    }
+
+    function test_SetAuthorizationWithUnauthorizedAddressReverts() public {
+        vm.startPrank(registryOwner);
+        address[] memory morphoTargets = new address[](1);
+        bytes4[] memory morphoSelectors = new bytes4[](1);
+        morphoTargets[0] = address(aavePool);
+        morphoSelectors[0] = SET_AUTHORIZATION_SELECTOR;
+        registry.addToWhitelist(morphoTargets, morphoSelectors);
+        vm.stopPrank();
+
+        address attacker = makeAddr("attacker");
+        address[] memory targets = new address[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
+        targets[0] = address(aavePool);
+        calldatas[0] = abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, attacker, true);
+        values[0] = 0;
+
+        Execution[] memory executions = _toExecutions(targets, calldatas, values);
+
+        instance.expect4337Revert(
+            GuardedExecModuleUpgradeable.UnauthorizedSetAuthorization.selector
+        );
+        instance.exec({
+            target: address(guardedModule),
+            value: 0,
+            callData: abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.executeGuardedBatch.selector, executions
+            )
+        });
+    }
+
     function test_CannotInitializeWithZeroRegistry() public {
         GuardedExecModuleUpgradeable newImpl = new GuardedExecModuleUpgradeable();
 

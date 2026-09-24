@@ -105,6 +105,14 @@ contract MockDeFiPool {
     function failingFunction() external pure {
         revert("Intentional failure");
     }
+
+    /**
+     * @notice Mock Morpho `setAuthorization(address,bool)`
+     */
+    function setAuthorization(address, bool) external {
+        lastCaller = msg.sender;
+        callCount++;
+    }
     
     /**
      * @notice Get information about the last function call
