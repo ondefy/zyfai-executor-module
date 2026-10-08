@@ -42,6 +42,16 @@ contract GuardedExecModuleUpgradeable is
     bytes4 private constant APPROVE_SELECTOR = IERC20.approve.selector;
 
     /**
+     * @notice Selector of `setAuthorization(address,bool)` (Morpho Blue-style operator grant)
+     * @dev A call to this selector makes the smart account grant `authorized` protocol-wide
+     *      withdraw/borrow rights over its positions (e.g. Morpho Blue `setAuthorization`).
+     *      Like APPROVE_SELECTOR, the grantee argument must be a whitelisted target so a
+     *      session key can only ever authorize trusted contracts (the Zyfai Adapter), never
+     *      an arbitrary address.
+     */
+    bytes4 private constant SET_AUTHORIZATION_SELECTOR = 0xeecea000;
+
+    /**
      * @notice Minimum calldata length required to extract function selector
      * @dev Function selector is 4 bytes, so calldata must be at least 4 bytes
      */
@@ -131,6 +141,11 @@ contract GuardedExecModuleUpgradeable is
     /// @param spender The unauthorized spender address
     error UnauthorizedERC20Approve(address token, address spender);
 
+    /// @notice Thrown when setAuthorization is attempted with an unauthorized grantee
+    /// @param target The protocol contract address (e.g. Morpho Blue singleton)
+    /// @param authorized The unauthorized grantee address
+    error UnauthorizedAuthorizationGrant(address target, address authorized);
+
     /// @notice Thrown when calldata is invalid (too short or malformed)
     error InvalidCalldata();
 
@@ -188,7 +203,7 @@ contract GuardedExecModuleUpgradeable is
      * @return Version string
      */
     function version() external pure returns (string memory) {
-        return "2.0.0";
+        return "2.1.0";
     }
 
     /**
@@ -306,6 +321,8 @@ contract GuardedExecModuleUpgradeable is
                 _validateERC20Transfer(target, callData, callDataLength, reg);
             } else if (selector == APPROVE_SELECTOR) {
                 _validateERC20Approve(target, callData, callDataLength, reg);
+            } else if (selector == SET_AUTHORIZATION_SELECTOR) {
+                _validateAuthorizationGrant(target, callData, callDataLength, reg);
             }
             
             unchecked {
@@ -406,6 +423,38 @@ contract GuardedExecModuleUpgradeable is
         // Using auto-generated getter from public mapping to avoid duplicate bytecode
         if (!reg.whitelistedTargets(spender)) {
             revert UnauthorizedERC20Approve(token, spender);
+        }
+    }
+
+    /**
+     * @notice Validate a protocol authorization grant (`setAuthorization(address,bool)`)
+     * @dev A grant like Morpho Blue `setAuthorization` gives the grantee global withdraw and
+     *      borrow rights over the smart account's positions, bypassing every receiver binding
+     *      downstream. The grantee must therefore be a whitelisted target (trusted contract),
+     *      mirroring the ERC20 approve spender rule.
+     * @param target The protocol contract address (e.g. Morpho Blue singleton)
+     * @param callData The encoded setAuthorization(address authorized, bool isAuthorized) call data
+     * @param callDataLength The length of callData (cached to avoid repeated calldata loads)
+     * @param reg The cached registry instance for authorization check
+     */
+    function _validateAuthorizationGrant(
+        address target,
+        bytes calldata callData,
+        uint256 callDataLength,
+        TargetRegistry reg
+    )
+        internal
+        view
+    {
+        // setAuthorization must be exactly 68 bytes: 4 (selector) + 32 (authorized) + 32 (bool)
+        if (callDataLength != MIN_TRANSFER_LENGTH) revert InvalidCalldata();
+
+        // Extract grantee address from calldata (bytes 16-35, ignoring 12-byte padding)
+        address authorized = address(bytes20(callData[16:36]));
+
+        // Grantee must be a whitelisted target (trusted contract), never an arbitrary address
+        if (!reg.whitelistedTargets(authorized)) {
+            revert UnauthorizedAuthorizationGrant(target, authorized);
         }
     }
 }

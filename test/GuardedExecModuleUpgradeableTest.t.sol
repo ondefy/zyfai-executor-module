@@ -11,6 +11,7 @@ import { UUPSUpgradeable } from
     "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { MockDeFiPool } from "test/mocks/MockDeFiPool.sol";
 import { MockERC20 } from "test/mocks/MockERC20.sol";
+import { MockMorphoBlue } from "test/mocks/MockMorphoBlue.sol";
 import { MockSafeWallet } from "test/mocks/MockSafeWallet.sol";
 import { TestTargetRegistryWithMockSafe } from "test/mocks/TestTargetRegistryWithMockSafe.sol";
 import { TargetRegistry } from "src/registry/TargetRegistry.sol";
@@ -323,7 +324,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         
         // Check version
         string memory version = guardedModule.version();
-        assertEq(version, "2.0.0", "Version should be 2.0.0");
+        assertEq(version, "2.1.0", "Version should be 2.1.0");
         
         // Check name
         string memory name = guardedModule.name();
@@ -1218,5 +1219,201 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
                 moduleOwner
             )
         );
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                 SETAUTHORIZATION GRANT VALIDATION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    bytes4 internal constant SET_AUTHORIZATION_SELECTOR = MockMorphoBlue.setAuthorization.selector;
+
+    /**
+     * @notice Deploy a mock Morpho Blue singleton and whitelist (morpho, setAuthorization)
+     */
+    function _deployAndWhitelistMorpho() internal returns (MockMorphoBlue morpho) {
+        morpho = new MockMorphoBlue();
+        vm.label(address(morpho), "MockMorphoBlue");
+
+        vm.startPrank(registryOwner);
+        address[] memory whitelistTargets = new address[](1);
+        whitelistTargets[0] = address(morpho);
+        bytes4[] memory whitelistSelectors = new bytes4[](1);
+        whitelistSelectors[0] = SET_AUTHORIZATION_SELECTOR;
+        registry.addToWhitelist(whitelistTargets, whitelistSelectors);
+        vm.stopPrank();
+    }
+
+    /**
+     * @notice Test: setAuthorization granting a whitelisted target (the Adapter) succeeds
+     * @dev uniswapPool stands in for the Zyfai Adapter: it is a whitelisted target, which is
+     *      exactly the condition the module enforces on the grantee.
+     */
+    function test_SetAuthorizationGrantToWhitelistedTargetSucceeds() public {
+        MockMorphoBlue morpho = _deployAndWhitelistMorpho();
+        address adapter = address(uniswapPool); // whitelisted target stand-in
+
+        address[] memory targets = new address[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
+        targets[0] = address(morpho);
+        calldatas[0] = abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, adapter, true);
+        values[0] = 0;
+
+        Execution[] memory executions = _toExecutions(targets, calldatas, values);
+
+        instance.exec({
+            target: address(guardedModule),
+            value: 0,
+            callData: abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.executeGuardedBatch.selector, executions
+            )
+        });
+
+        assertTrue(
+            morpho.isAuthorized(smartAccount, adapter),
+            "Smart account should have authorized the whitelisted target"
+        );
+    }
+
+    /**
+     * @notice Test: setAuthorization granting an arbitrary address reverts
+     * @dev This is the drain path: a compromised session key tries to authorize its own EOA
+     *      as global Morpho operator for the Safe. The module must block it.
+     */
+    function test_SetAuthorizationGrantToArbitraryAddressReverts() public {
+        MockMorphoBlue morpho = _deployAndWhitelistMorpho();
+        address attacker = makeAddr("attacker");
+
+        address[] memory targets = new address[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
+        targets[0] = address(morpho);
+        calldatas[0] = abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, attacker, true);
+        values[0] = 0;
+
+        Execution[] memory executions = _toExecutions(targets, calldatas, values);
+
+        instance.expect4337Revert(
+            GuardedExecModuleUpgradeable.UnauthorizedAuthorizationGrant.selector
+        );
+        instance.exec({
+            target: address(guardedModule),
+            value: 0,
+            callData: abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.executeGuardedBatch.selector, executions
+            )
+        });
+
+        assertFalse(
+            morpho.isAuthorized(smartAccount, attacker),
+            "Attacker must never become authorized"
+        );
+    }
+
+    /**
+     * @notice Test: revoking (bool = false) a whitelisted grantee also passes validation
+     */
+    function test_SetAuthorizationRevokeWhitelistedTargetSucceeds() public {
+        MockMorphoBlue morpho = _deployAndWhitelistMorpho();
+        address adapter = address(uniswapPool);
+
+        address[] memory targets = new address[](2);
+        bytes[] memory calldatas = new bytes[](2);
+        uint256[] memory values = new uint256[](2);
+        targets[0] = address(morpho);
+        calldatas[0] = abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, adapter, true);
+        values[0] = 0;
+        targets[1] = address(morpho);
+        calldatas[1] = abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, adapter, false);
+        values[1] = 0;
+
+        Execution[] memory executions = _toExecutions(targets, calldatas, values);
+
+        instance.exec({
+            target: address(guardedModule),
+            value: 0,
+            callData: abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.executeGuardedBatch.selector, executions
+            )
+        });
+
+        assertFalse(
+            morpho.isAuthorized(smartAccount, adapter), "Authorization should have been revoked"
+        );
+    }
+
+    /**
+     * @notice Test: setAuthorization without a registry whitelist entry reverts
+     */
+    function test_SetAuthorizationNotWhitelistedSelectorReverts() public {
+        MockMorphoBlue morpho = new MockMorphoBlue(); // NOT whitelisted
+
+        address[] memory targets = new address[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
+        targets[0] = address(morpho);
+        calldatas[0] =
+            abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, address(uniswapPool), true);
+        values[0] = 0;
+
+        Execution[] memory executions = _toExecutions(targets, calldatas, values);
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.TargetSelectorNotWhitelisted.selector,
+                address(morpho),
+                SET_AUTHORIZATION_SELECTOR
+            )
+        );
+        guardedModule.executeGuardedBatch(executions);
+    }
+
+    /**
+     * @notice Test: malformed setAuthorization calldata (wrong length) reverts
+     */
+    function test_SetAuthorizationInvalidCalldataLengthReverts() public {
+        MockMorphoBlue morpho = _deployAndWhitelistMorpho();
+
+        address[] memory targets = new address[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
+        targets[0] = address(morpho);
+        // Only 36 bytes: 4 (selector) + 32 (address), missing the bool word
+        calldatas[0] = abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, address(uniswapPool));
+        values[0] = 0;
+
+        Execution[] memory executions = _toExecutions(targets, calldatas, values);
+
+        vm.prank(smartAccount);
+        vm.expectRevert(GuardedExecModuleUpgradeable.InvalidCalldata.selector);
+        guardedModule.executeGuardedBatch(executions);
+    }
+
+    /**
+     * @notice Fuzz: no non-whitelisted grantee can ever pass setAuthorization validation
+     */
+    function testFuzz_SetAuthorizationGrantOnlyWhitelistedTargets(address grantee) public {
+        MockMorphoBlue morpho = _deployAndWhitelistMorpho();
+        vm.assume(!registry.whitelistedTargets(grantee));
+
+        address[] memory targets = new address[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
+        targets[0] = address(morpho);
+        calldatas[0] = abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, grantee, true);
+        values[0] = 0;
+
+        Execution[] memory executions = _toExecutions(targets, calldatas, values);
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.UnauthorizedAuthorizationGrant.selector,
+                address(morpho),
+                grantee
+            )
+        );
+        guardedModule.executeGuardedBatch(executions);
     }
 }
