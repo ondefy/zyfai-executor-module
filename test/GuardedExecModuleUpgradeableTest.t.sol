@@ -12,6 +12,7 @@ import { UUPSUpgradeable } from
 import { MockDeFiPool } from "test/mocks/MockDeFiPool.sol";
 import { MockERC20 } from "test/mocks/MockERC20.sol";
 import { MockMorphoBlue } from "test/mocks/MockMorphoBlue.sol";
+import { MockOperatorVault } from "test/mocks/MockOperatorVault.sol";
 import { MockSafeWallet } from "test/mocks/MockSafeWallet.sol";
 import { TestTargetRegistryWithMockSafe } from "test/mocks/TestTargetRegistryWithMockSafe.sol";
 import { TargetRegistry } from "src/registry/TargetRegistry.sol";
@@ -1510,6 +1511,98 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
             _singleExecution(
                 address(morpho),
                 abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, attacker, uint256(2))
+            )
+        );
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                   SETOPERATOR GRANT VALIDATION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    bytes4 internal constant SET_OPERATOR_SELECTOR = MockOperatorVault.setOperator.selector;
+
+    /**
+     * @notice Deploy a mock ERC-7540 vault and whitelist (vault, setOperator)
+     */
+    function _deployAndWhitelistOperatorVault() internal returns (MockOperatorVault vault) {
+        vault = new MockOperatorVault();
+        vm.label(address(vault), "MockOperatorVault");
+
+        vm.startPrank(registryOwner);
+        address[] memory whitelistTargets = new address[](1);
+        whitelistTargets[0] = address(vault);
+        bytes4[] memory whitelistSelectors = new bytes4[](1);
+        whitelistSelectors[0] = SET_OPERATOR_SELECTOR;
+        registry.addToWhitelist(whitelistTargets, whitelistSelectors);
+        vm.stopPrank();
+    }
+
+    /**
+     * @notice Test: setOperator granting a whitelisted target (the Adapter) succeeds
+     */
+    function test_SetOperatorGrantToWhitelistedTargetSucceeds() public {
+        MockOperatorVault vault = _deployAndWhitelistOperatorVault();
+        address adapter = address(uniswapPool); // whitelisted target stand-in
+
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(
+                address(vault), abi.encodeWithSelector(SET_OPERATOR_SELECTOR, adapter, true)
+            )
+        );
+        assertTrue(vault.isOperator(smartAccount, adapter), "whitelisted operator granted");
+    }
+
+    /**
+     * @notice Test: setOperator granting an arbitrary address reverts
+     */
+    function test_SetOperatorGrantToArbitraryAddressReverts() public {
+        MockOperatorVault vault = _deployAndWhitelistOperatorVault();
+        address attacker = makeAddr("attacker");
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.UnauthorizedAuthorizationGrant.selector,
+                address(vault),
+                attacker
+            )
+        );
+        guardedModule.executeGuardedBatch(
+            _singleExecution(
+                address(vault), abi.encodeWithSelector(SET_OPERATOR_SELECTOR, attacker, true)
+            )
+        );
+        assertFalse(vault.isOperator(smartAccount, attacker), "attacker never an operator");
+    }
+
+    /**
+     * @notice Test: setOperator revoke (false) of a non-whitelisted address succeeds
+     */
+    function test_SetOperatorRevokeArbitraryAddressSucceeds() public {
+        MockOperatorVault vault = _deployAndWhitelistOperatorVault();
+        address stale = makeAddr("stale");
+
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(
+                address(vault), abi.encodeWithSelector(SET_OPERATOR_SELECTOR, stale, false)
+            )
+        );
+        assertFalse(vault.isOperator(smartAccount, stale), "revoke passed");
+    }
+
+    /**
+     * @notice Test: malformed setOperator calldata (wrong length) reverts
+     */
+    function test_SetOperatorInvalidCalldataLengthReverts() public {
+        MockOperatorVault vault = _deployAndWhitelistOperatorVault();
+
+        vm.prank(smartAccount);
+        vm.expectRevert(GuardedExecModuleUpgradeable.InvalidCalldata.selector);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(
+                address(vault), abi.encodeWithSelector(SET_OPERATOR_SELECTOR, address(uniswapPool))
             )
         );
     }
