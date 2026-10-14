@@ -1416,4 +1416,101 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         );
         guardedModule.executeGuardedBatch(executions);
     }
+
+    function _singleExecution(
+        address target,
+        bytes memory callData
+    )
+        internal
+        pure
+        returns (Execution[] memory executions)
+    {
+        executions = new Execution[](1);
+        executions[0] = Execution({ target: target, value: 0, callData: callData });
+    }
+
+    /**
+     * @notice Remove curvePool's only selector so it is no longer a whitelisted target
+     */
+    function _dewhitelistCurvePool() internal {
+        address[] memory targets = new address[](1);
+        bytes4[] memory selectors = new bytes4[](1);
+        targets[0] = address(curvePool);
+        selectors[0] = SWAP_SELECTOR;
+        vm.prank(registryOwner);
+        registry.removeFromWhitelist(targets, selectors);
+        assertFalse(registry.whitelistedTargets(address(curvePool)), "grantee de-whitelisted");
+    }
+
+    /**
+     * @notice Test: a grant can still be revoked after the grantee is de-whitelisted
+     */
+    function test_SetAuthorizationRevokeAfterDewhitelistSucceeds() public {
+        MockMorphoBlue morpho = _deployAndWhitelistMorpho();
+        address grantee = address(curvePool);
+
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(
+                address(morpho), abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, grantee, true)
+            )
+        );
+        assertTrue(morpho.isAuthorized(smartAccount, grantee), "granted");
+
+        _dewhitelistCurvePool();
+
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(
+                address(morpho), abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, grantee, false)
+            )
+        );
+        assertFalse(morpho.isAuthorized(smartAccount, grantee), "stale authorization revoked");
+    }
+
+    /**
+     * @notice Test: a grant to a de-whitelisted grantee still reverts
+     */
+    function test_SetAuthorizationGrantToDewhitelistedTargetReverts() public {
+        MockMorphoBlue morpho = _deployAndWhitelistMorpho();
+        address grantee = address(curvePool);
+        _dewhitelistCurvePool();
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.UnauthorizedAuthorizationGrant.selector,
+                address(morpho),
+                grantee
+            )
+        );
+        guardedModule.executeGuardedBatch(
+            _singleExecution(
+                address(morpho), abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, grantee, true)
+            )
+        );
+    }
+
+    /**
+     * @notice Test: a non-canonical bool word (2) is treated as a grant, not a revoke
+     */
+    function test_SetAuthorizationNonCanonicalBoolToArbitraryAddressReverts() public {
+        MockMorphoBlue morpho = _deployAndWhitelistMorpho();
+        address attacker = makeAddr("attacker");
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.UnauthorizedAuthorizationGrant.selector,
+                address(morpho),
+                attacker
+            )
+        );
+        guardedModule.executeGuardedBatch(
+            _singleExecution(
+                address(morpho),
+                abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, attacker, uint256(2))
+            )
+        );
+    }
 }
