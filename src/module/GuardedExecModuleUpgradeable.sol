@@ -52,6 +52,13 @@ contract GuardedExecModuleUpgradeable is
     bytes4 private constant SET_AUTHORIZATION_SELECTOR = 0xeecea000;
 
     /**
+     * @notice Selector of `setOperator(address,bool)` (ERC-7540 operator grant, e.g. SuperVault)
+     * @dev Same calldata layout and grantee rule as SET_AUTHORIZATION_SELECTOR: an operator can
+     *      act on the smart account's vault requests, so it must be a whitelisted target.
+     */
+    bytes4 private constant SET_OPERATOR_SELECTOR = 0x558a7297;
+
+    /**
      * @notice Minimum calldata length required to extract function selector
      * @dev Function selector is 4 bytes, so calldata must be at least 4 bytes
      */
@@ -141,8 +148,8 @@ contract GuardedExecModuleUpgradeable is
     /// @param spender The unauthorized spender address
     error UnauthorizedERC20Approve(address token, address spender);
 
-    /// @notice Thrown when setAuthorization is attempted with an unauthorized grantee
-    /// @param target The protocol contract address (e.g. Morpho Blue singleton)
+    /// @notice Thrown when setAuthorization or setOperator grants an unauthorized address
+    /// @param target The protocol contract address (e.g. Morpho Blue singleton, SuperVault)
     /// @param authorized The unauthorized grantee address
     error UnauthorizedAuthorizationGrant(address target, address authorized);
 
@@ -321,7 +328,9 @@ contract GuardedExecModuleUpgradeable is
                 _validateERC20Transfer(target, callData, callDataLength, reg);
             } else if (selector == APPROVE_SELECTOR) {
                 _validateERC20Approve(target, callData, callDataLength, reg);
-            } else if (selector == SET_AUTHORIZATION_SELECTOR) {
+            } else if (
+                selector == SET_AUTHORIZATION_SELECTOR || selector == SET_OPERATOR_SELECTOR
+            ) {
                 _validateAuthorizationGrant(target, callData, callDataLength, reg);
             }
             
@@ -427,13 +436,14 @@ contract GuardedExecModuleUpgradeable is
     }
 
     /**
-     * @notice Validate a protocol authorization grant (`setAuthorization(address,bool)`)
+     * @notice Validate a protocol authorization grant (`setAuthorization(address,bool)` or
+     *         `setOperator(address,bool)`)
      * @dev A grant like Morpho Blue `setAuthorization` gives the grantee global withdraw and
      *      borrow rights over the smart account's positions, bypassing every receiver binding
      *      downstream. The grantee must therefore be a whitelisted target (trusted contract),
      *      mirroring the ERC20 approve spender rule. Revokes (bool = false) are not restricted.
-     * @param target The protocol contract address (e.g. Morpho Blue singleton)
-     * @param callData The encoded setAuthorization(address authorized, bool isAuthorized) call data
+     * @param target The protocol contract address (e.g. Morpho Blue singleton, SuperVault)
+     * @param callData The encoded (address grantee, bool approved) call data
      * @param callDataLength The length of callData (cached to avoid repeated calldata loads)
      * @param reg The cached registry instance for authorization check
      */
@@ -446,7 +456,7 @@ contract GuardedExecModuleUpgradeable is
         internal
         view
     {
-        // setAuthorization must be exactly 68 bytes: 4 (selector) + 32 (authorized) + 32 (bool)
+        // Grant calls must be exactly 68 bytes: 4 (selector) + 32 (grantee) + 32 (bool)
         if (callDataLength != MIN_TRANSFER_LENGTH) revert InvalidCalldata();
 
         // A revoke only removes rights, so it is allowed for any grantee (including one that was
