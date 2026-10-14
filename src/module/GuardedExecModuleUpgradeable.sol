@@ -431,7 +431,7 @@ contract GuardedExecModuleUpgradeable is
      * @dev A grant like Morpho Blue `setAuthorization` gives the grantee global withdraw and
      *      borrow rights over the smart account's positions, bypassing every receiver binding
      *      downstream. The grantee must therefore be a whitelisted target (trusted contract),
-     *      mirroring the ERC20 approve spender rule.
+     *      mirroring the ERC20 approve spender rule. Revokes (bool = false) are not restricted.
      * @param target The protocol contract address (e.g. Morpho Blue singleton)
      * @param callData The encoded setAuthorization(address authorized, bool isAuthorized) call data
      * @param callDataLength The length of callData (cached to avoid repeated calldata loads)
@@ -448,6 +448,10 @@ contract GuardedExecModuleUpgradeable is
     {
         // setAuthorization must be exactly 68 bytes: 4 (selector) + 32 (authorized) + 32 (bool)
         if (callDataLength != MIN_TRANSFER_LENGTH) revert InvalidCalldata();
+
+        // A revoke only removes rights, so it is allowed for any grantee (including one that was
+        // de-whitelisted after the grant). Only an exact-zero bool word counts as a revoke.
+        if (bytes32(callData[36:68]) == bytes32(0)) return;
 
         // Extract grantee address from calldata (bytes 16-35, ignoring 12-byte padding)
         address authorized = address(bytes20(callData[16:36]));
