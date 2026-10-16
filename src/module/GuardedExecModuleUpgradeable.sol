@@ -8,6 +8,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ERC7579ExecutorBase } from "modulekit/Modules.sol";
 import { Execution } from "modulekit/accounts/erc7579/lib/ExecutionLib.sol";
 import { TargetRegistry } from "../registry/TargetRegistry.sol";
+import { IAaveV4Spoke } from "../interfaces/IAaveV4Spoke.sol";
 
 /**
  * @title GuardedExecModuleUpgradeable
@@ -40,6 +41,48 @@ contract GuardedExecModuleUpgradeable is
      * @dev Used to identify ERC20 approve calls for additional authorization checks
      */
     bytes4 private constant APPROVE_SELECTOR = IERC20.approve.selector;
+
+    /**
+     * @notice Selector of `setAuthorization(address,bool)` (Morpho Blue-style operator grant)
+     * @dev A call to this selector makes the smart account grant `authorized` protocol-wide
+     *      withdraw/borrow rights over its positions (e.g. Morpho Blue `setAuthorization`).
+     *      Like APPROVE_SELECTOR, the grantee argument must be a whitelisted target so a
+     *      session key can only ever authorize trusted contracts (the Zyfai Adapter), never
+     *      an arbitrary address.
+     */
+    bytes4 private constant SET_AUTHORIZATION_SELECTOR = 0xeecea000;
+
+    /**
+     * @notice Selector of `setOperator(address,bool)` (ERC-7540 operator grant, e.g. SuperVault)
+     * @dev Same calldata layout and grantee rule as SET_AUTHORIZATION_SELECTOR: an operator can
+     *      act on the smart account's vault requests, so it must be a whitelisted target.
+     */
+    bytes4 private constant SET_OPERATOR_SELECTOR = 0x558a7297;
+
+    /**
+     * @notice Selector of Aave v4 Spoke `borrow(uint256,uint256,address)`
+     * @dev Of the Spoke position calls (supply, withdraw, borrow, repay, setUsingAsCollateral),
+     *      this one, SPOKE_WITHDRAW_SELECTOR and SPOKE_SET_COLLATERAL_SELECTOR are the only ones
+     *      that can lower the caller's health factor (`supply` and `repay` only raise it).
+     *      The Spoke itself only enforces health factor >= 1, so without
+     *      a margin a session key could borrow to the edge and liquidate the smart account from
+     *      its own EOA (permissionless `liquidationCall`, liquidator takes collateral + bonus).
+     */
+    bytes4 private constant SPOKE_BORROW_SELECTOR = 0xd6bda0c0;
+
+    /// @notice Selector of Aave v4 Spoke `withdraw(uint256,uint256,address)`
+    bytes4 private constant SPOKE_WITHDRAW_SELECTOR = 0x0ad58d2f;
+
+    /// @notice Selector of Aave v4 Spoke `setUsingAsCollateral(uint256,bool,address)`
+    bytes4 private constant SPOKE_SET_COLLATERAL_SELECTOR = 0x9e35c533;
+
+    /**
+     * @notice Minimum Aave v4 Spoke health factor (WAD) a batch may leave the smart account at
+     * @dev 1.5 instead of the Spoke's 1.0 liquidation threshold, so a session key cannot park the
+     *      position next to liquidation; collateral must drop by a third before liquidation,
+     *      which leaves room for gap moves on volatile collateral such as tokenized equities.
+     */
+    uint256 private constant MIN_HEALTH_FACTOR = 1.5e18;
 
     /**
      * @notice Minimum calldata length required to extract function selector
@@ -131,6 +174,16 @@ contract GuardedExecModuleUpgradeable is
     /// @param spender The unauthorized spender address
     error UnauthorizedERC20Approve(address token, address spender);
 
+    /// @notice Thrown when setAuthorization or setOperator grants an unauthorized address
+    /// @param target The protocol contract address (e.g. Morpho Blue singleton, SuperVault)
+    /// @param authorized The unauthorized grantee address
+    error UnauthorizedAuthorizationGrant(address target, address authorized);
+
+    /// @notice Thrown when a batch leaves the smart account below MIN_HEALTH_FACTOR on a Spoke
+    /// @param spoke The Aave v4 Spoke whose health factor check failed
+    /// @param healthFactor The smart account's health factor on that Spoke after the batch (WAD)
+    error HealthFactorTooLow(address spoke, uint256 healthFactor);
+
     /// @notice Thrown when calldata is invalid (too short or malformed)
     error InvalidCalldata();
 
@@ -188,7 +241,7 @@ contract GuardedExecModuleUpgradeable is
      * @return Version string
      */
     function version() external pure returns (string memory) {
-        return "2.0.0";
+        return "2.1.0";
     }
 
     /**
@@ -263,6 +316,15 @@ contract GuardedExecModuleUpgradeable is
      *      Executions maintain smart account context (msg.sender = smart account).
      *      All validations occur before execution (checks-effects-interactions pattern).
      *      The smart account uses its own balance to forward ETH to target contracts.
+     *      After execution, every target called with an Aave v4 Spoke borrow, withdraw or
+     *      setUsingAsCollateral selector must report a health factor >= MIN_HEALTH_FACTOR for the
+     *      smart account, otherwise the whole batch reverts. The check runs once per Spoke at the
+     *      end of the batch, so intermediate states (e.g. borrow then repay) are allowed.
+     *      Any target whitelisted with one of those selectors must be an Aave v4 Spoke: on any
+     *      other contract the `getUserAccountData` call reverts the batch. Never whitelist these
+     *      Spoke selectors: `setUserPositionManager`, `setUserPositionManagersWithSig` and
+     *      `multicall` route around this check, `updateUserDynamicConfig` can lower the health
+     *      factor unchecked, and `liquidationCall` spends the smart account's funds on others.
      * @param executions Array of Execution structs containing target, value, and callData
      */
     function executeGuardedBatch(
@@ -276,6 +338,8 @@ contract GuardedExecModuleUpgradeable is
         
         address[] memory targets = new address[](length);
         bytes4[] memory selectors = new bytes4[](length);
+        address[] memory spokes = new address[](length);
+        uint256 spokeCount;
         GuardedExecModuleStorage storage s = _getGuardedExecModuleStorage();
         TargetRegistry reg = s.registry;
         
@@ -306,6 +370,15 @@ contract GuardedExecModuleUpgradeable is
                 _validateERC20Transfer(target, callData, callDataLength, reg);
             } else if (selector == APPROVE_SELECTOR) {
                 _validateERC20Approve(target, callData, callDataLength, reg);
+            } else if (
+                selector == SET_AUTHORIZATION_SELECTOR || selector == SET_OPERATOR_SELECTOR
+            ) {
+                _validateAuthorizationGrant(target, callData, callDataLength, reg);
+            } else if (
+                selector == SPOKE_BORROW_SELECTOR || selector == SPOKE_WITHDRAW_SELECTOR
+                    || selector == SPOKE_SET_COLLATERAL_SELECTOR
+            ) {
+                spokeCount = _recordSpoke(spokes, spokeCount, target);
             }
             
             unchecked {
@@ -317,6 +390,8 @@ contract GuardedExecModuleUpgradeable is
         // The smart account uses its own balance to forward ETH to target contracts
         // based on the Execution.value fields in the executions array
         _execute(executions);
+
+        _validateSpokeHealthFactors(spokes, spokeCount);
 
         emit GuardedBatchExecuted(msg.sender, targets, selectors, block.timestamp);
     }
@@ -406,6 +481,94 @@ contract GuardedExecModuleUpgradeable is
         // Using auto-generated getter from public mapping to avoid duplicate bytecode
         if (!reg.whitelistedTargets(spender)) {
             revert UnauthorizedERC20Approve(token, spender);
+        }
+    }
+
+    /**
+     * @notice Validate a protocol authorization grant (`setAuthorization(address,bool)` or
+     *         `setOperator(address,bool)`)
+     * @dev A grant like Morpho Blue `setAuthorization` gives the grantee global withdraw and
+     *      borrow rights over the smart account's positions, bypassing every receiver binding
+     *      downstream. The grantee must therefore be a whitelisted target (trusted contract),
+     *      mirroring the ERC20 approve spender rule. Revokes (bool = false) are not restricted.
+     * @param target The protocol contract address (e.g. Morpho Blue singleton, SuperVault)
+     * @param callData The encoded (address grantee, bool approved) call data
+     * @param callDataLength The length of callData (cached to avoid repeated calldata loads)
+     * @param reg The cached registry instance for authorization check
+     */
+    function _validateAuthorizationGrant(
+        address target,
+        bytes calldata callData,
+        uint256 callDataLength,
+        TargetRegistry reg
+    )
+        internal
+        view
+    {
+        // Grant calls must be exactly 68 bytes: 4 (selector) + 32 (grantee) + 32 (bool)
+        if (callDataLength != MIN_TRANSFER_LENGTH) revert InvalidCalldata();
+
+        // A revoke only removes rights, so it is allowed for any grantee (including one that was
+        // de-whitelisted after the grant). Only an exact-zero bool word counts as a revoke.
+        if (bytes32(callData[36:68]) == bytes32(0)) return;
+
+        // Extract grantee address from calldata (bytes 16-35, ignoring 12-byte padding)
+        address authorized = address(bytes20(callData[16:36]));
+
+        // Grantee must be a whitelisted target (trusted contract), never an arbitrary address
+        if (!reg.whitelistedTargets(authorized)) {
+            revert UnauthorizedAuthorizationGrant(target, authorized);
+        }
+    }
+
+    /**
+     * @notice Append a Spoke to the list checked after execution, unless already present
+     * @dev Linear scan; batches are small.
+     * @param spokes The Spokes recorded so far (sized to the batch length)
+     * @param count The number of Spokes recorded so far
+     * @param spoke The Spoke targeted by the current execution
+     * @return The updated number of recorded Spokes
+     */
+    function _recordSpoke(
+        address[] memory spokes,
+        uint256 count,
+        address spoke
+    )
+        internal
+        pure
+        returns (uint256)
+    {
+        for (uint256 i = 0; i < count;) {
+            if (spokes[i] == spoke) return count;
+            unchecked {
+                ++i;
+            }
+        }
+        spokes[count] = spoke;
+        unchecked {
+            return count + 1;
+        }
+    }
+
+    /**
+     * @notice Require the smart account's health factor on each recorded Spoke to be at least
+     *         MIN_HEALTH_FACTOR
+     * @dev Runs after execution. msg.sender is the smart account, and the Spoke binds these calls
+     *      to its position: `onBehalfOf` must be the caller unless the caller is a
+     *      governance-activated position manager approved by `onBehalfOf`.
+     * @param spokes The Spokes touched by health-factor-lowering calls in this batch
+     * @param count The number of recorded Spokes
+     */
+    function _validateSpokeHealthFactors(address[] memory spokes, uint256 count) internal view {
+        for (uint256 i = 0; i < count;) {
+            uint256 healthFactor =
+                IAaveV4Spoke(spokes[i]).getUserAccountData(msg.sender).healthFactor;
+            if (healthFactor < MIN_HEALTH_FACTOR) {
+                revert HealthFactorTooLow(spokes[i], healthFactor);
+            }
+            unchecked {
+                ++i;
+            }
         }
     }
 }

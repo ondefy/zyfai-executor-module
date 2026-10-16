@@ -34,9 +34,19 @@ GuardedExecModule is an ERC-7579 executor module that provides secure, whitelist
    - The smart wallet itself
    - Wallet owners
    - Explicitly authorized recipients (e.g., DEX routers, lending protocols)
-3. **Owner-Controlled Whitelist**: Only contract owner can modify whitelist (should be multisig for production)
-4. **Pausable**: Emergency stop capability for compromised session keys or malicious whitelist changes
-5. **Two-Step Ownership Transfer**: Prevents accidental or malicious ownership transfers
+3. **ERC20 Approve Authorization**: The spender of an ERC20 `approve` must be a whitelisted target (a trusted contract such as the Zyfai Adapter or a protocol pool)
+4. **Authorization Grant Validation**: For Morpho Blue `setAuthorization(address,bool)` (`0xeecea000`) and ERC-7540 `setOperator(address,bool)` (`0x558a7297`), a grant (`true`) must name a whitelisted target. A revoke (`false`) is always allowed, so a stale grant can be removed after the grantee is de-whitelisted
+5. **Aave v4 Spoke Health Factor**: After a batch that calls `borrow` (`0xd6bda0c0`), `withdraw` (`0x0ad58d2f`) or `setUsingAsCollateral` (`0x9e35c533`) on a target, the module reads `getUserAccountData(smartAccount).healthFactor` on that target and reverts the whole batch if it is below 1.5 (`MIN_HEALTH_FACTOR`, WAD). The Spoke itself only enforces 1.0, so this stops a session key from pushing the account to the edge of liquidation and liquidating it. These three selectors must only be whitelisted on Aave v4 Spokes
+6. **Owner-Controlled Whitelist**: Only contract owner can modify whitelist (should be multisig for production)
+7. **Pausable**: Emergency stop capability for compromised session keys or malicious whitelist changes
+8. **Two-Step Ownership Transfer**: Prevents accidental or malicious ownership transfers
+
+### Selectors that must never be whitelisted
+
+These calls would let a session key bypass the checks above:
+
+- Aave v4 Spoke: `setUserPositionManager` (`0x8874e104`), `setUserPositionManagersWithSig` (`0x03ed05c1`), `multicall` (`0xac9650d8`), `liquidationCall`, `updateUserDynamicConfig` (`0x826002e2`)
+- Any protocol's operator/delegate/authorization grant that is not validated above (only `0xeecea000` and `0x558a7297` are checked)
 
 ## 👥 Actors and Roles
 
@@ -70,10 +80,14 @@ GuardedExecModule is an ERC-7579 executor module that provides secure, whitelist
 - Execute batch operations on whitelisted target+selector combinations
 - Execute operations that maintain smart account context (msg.sender = smart account)
 - Execute ERC20 transfers to authorized recipients only
+- Approve ERC20 spending and grant protocol authorizations/operators to whitelisted targets only
+- Borrow on an Aave v4 Spoke while keeping the account health factor at or above 1.5
 
 **Limitations**:
 - Cannot execute operations on non-whitelisted target+selectors
 - Cannot transfer ERC20 tokens to arbitrary addresses
+- Cannot approve, authorize or make an operator of a non-whitelisted address
+- Cannot leave an Aave v4 Spoke position below a 1.5 health factor
 - Cannot pause the module
 - Cannot modify the whitelist
 - Cannot upgrade the module
@@ -86,7 +100,7 @@ GuardedExecModule is an ERC-7579 executor module that provides secure, whitelist
 1. **GuardedExecModuleUpgradeable** (`src/module/GuardedExecModuleUpgradeable.sol`)
    - Main executor module contract
    - Implements ERC-7579 executor interface
-   - Validates whitelist and ERC20 transfer authorization
+   - Validates whitelist, ERC20 transfer/approve authorization, authorization grants, and Aave v4 Spoke health factor
    - Upgradeable via UUPS pattern
 
 2. **TargetRegistry** (`src/registry/TargetRegistry.sol`)
@@ -98,6 +112,9 @@ GuardedExecModule is an ERC-7579 executor module that provides secure, whitelist
 3. **ISafeWallet** (`src/interfaces/ISafeWallet.sol`)
    - Interface for querying smart wallet owners
    - Used for ERC20 transfer authorization checks
+
+4. **IAaveV4Spoke** (`src/interfaces/IAaveV4Spoke.sol`)
+   - Minimal Aave v4 Spoke interface (`getUserAccountData`) used for the health factor check
 
 ### Contract Relationships
 
@@ -119,7 +136,9 @@ Smart Account
    - Session key calls `executeGuardedBatch()` on GuardedExecModuleUpgradeable
    - Module validates all target+selector combinations against TargetRegistry whitelist
    - Module validates ERC20 transfers (if any) against authorized recipients
+   - Module validates ERC20 approve spenders and `setAuthorization` / `setOperator` grantees against whitelisted targets
    - Module executes batch operations via smart account (maintains context)
+   - If the batch called `borrow`, `withdraw` or `setUsingAsCollateral` on a Spoke, the module checks the account health factor on that Spoke after execution
 
 2. **Whitelist Management Flow**:
    - Registry owner calls `addToWhitelist()` or `removeFromWhitelist()` on TargetRegistry
