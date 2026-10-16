@@ -11,6 +11,7 @@ import { UUPSUpgradeable } from
     "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { MockDeFiPool } from "test/mocks/MockDeFiPool.sol";
 import { MockERC20 } from "test/mocks/MockERC20.sol";
+import { MockAaveV4Spoke } from "test/mocks/MockAaveV4Spoke.sol";
 import { MockMorphoBlue } from "test/mocks/MockMorphoBlue.sol";
 import { MockOperatorVault } from "test/mocks/MockOperatorVault.sol";
 import { MockSafeWallet } from "test/mocks/MockSafeWallet.sol";
@@ -1605,5 +1606,275 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
                 address(vault), abi.encodeWithSelector(SET_OPERATOR_SELECTOR, address(uniswapPool))
             )
         );
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                 AAVE V4 SPOKE MIN HEALTH FACTOR TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    uint256 internal constant MIN_HEALTH_FACTOR = 1.5e18;
+    uint256 internal constant RESERVE_ID = 7;
+
+    /**
+     * @notice Deploy a mock Aave v4 Spoke and whitelist its five position selectors
+     */
+    function _deployAndWhitelistSpoke() internal returns (MockAaveV4Spoke spoke) {
+        spoke = new MockAaveV4Spoke();
+        vm.label(address(spoke), "MockAaveV4Spoke");
+
+        vm.startPrank(registryOwner);
+        address[] memory whitelistTargets = new address[](5);
+        bytes4[] memory whitelistSelectors = new bytes4[](5);
+        whitelistSelectors[0] = MockAaveV4Spoke.supply.selector;
+        whitelistSelectors[1] = MockAaveV4Spoke.withdraw.selector;
+        whitelistSelectors[2] = MockAaveV4Spoke.borrow.selector;
+        whitelistSelectors[3] = MockAaveV4Spoke.repay.selector;
+        whitelistSelectors[4] = MockAaveV4Spoke.setUsingAsCollateral.selector;
+        for (uint256 i = 0; i < 5; i++) {
+            whitelistTargets[i] = address(spoke);
+        }
+        registry.addToWhitelist(whitelistTargets, whitelistSelectors);
+        vm.stopPrank();
+    }
+
+    /// @notice Encode a Spoke (reserveId, amount, smartAccount) position call
+    function _spokeCall(bytes4 selector, uint256 amount) internal view returns (bytes memory) {
+        return abi.encodeWithSelector(selector, RESERVE_ID, amount, smartAccount);
+    }
+
+    /// @notice Expected getUserAccountData calldata for the smart account
+    function _accountDataCall() internal view returns (bytes memory) {
+        return abi.encodeCall(MockAaveV4Spoke.getUserAccountData, (smartAccount));
+    }
+
+    /**
+     * @notice Test: a session-key borrow that leaves health factor exactly at the minimum passes
+     */
+    function test_SpokeBorrowAtMinHealthFactorSucceeds() public {
+        MockAaveV4Spoke spoke = _deployAndWhitelistSpoke();
+        spoke.setPosition(smartAccount, 3e18, 0, true);
+
+        instance.exec({
+            target: address(guardedModule),
+            value: 0,
+            callData: abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.executeGuardedBatch.selector,
+                _singleExecution(address(spoke), _spokeCall(MockAaveV4Spoke.borrow.selector, 2e18))
+            )
+        });
+
+        assertEq(spoke.debt(smartAccount), 2e18, "borrow executed");
+    }
+
+    /**
+     * @notice Test: a borrow leaving health factor below the minimum reverts the whole batch
+     * @dev This is the self-liquidation path: a compromised session key borrows to the edge
+     *      (the Spoke itself only enforces 1.0) and then liquidates the account from its own EOA.
+     */
+    function test_SpokeBorrowBelowMinHealthFactorRevertsWholeBatch() public {
+        MockAaveV4Spoke spoke = _deployAndWhitelistSpoke();
+        spoke.setPosition(smartAccount, 3e18, 0, true);
+
+        Execution[] memory executions = new Execution[](2);
+        executions[0] = Execution({
+            target: address(uniswapPool),
+            value: 0,
+            callData: abi.encodeWithSelector(SWAP_SELECTOR, 1 ether, 1 ether)
+        });
+        executions[1] = Execution({
+            target: address(spoke),
+            value: 0,
+            callData: _spokeCall(MockAaveV4Spoke.borrow.selector, 2.5e18)
+        });
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.HealthFactorTooLow.selector, address(spoke), 1.2e18
+            )
+        );
+        guardedModule.executeGuardedBatch(executions);
+
+        assertEq(spoke.debt(smartAccount), 0, "borrow rolled back");
+        (, uint256 swapCount) = uniswapPool.getLastCallInfo();
+        assertEq(swapCount, 0, "earlier execution rolled back");
+    }
+
+    /**
+     * @notice Test: withdrawing collateral below the minimum health factor reverts
+     */
+    function test_SpokeWithdrawBelowMinHealthFactorReverts() public {
+        MockAaveV4Spoke spoke = _deployAndWhitelistSpoke();
+        spoke.setPosition(smartAccount, 3e18, 1e18, true);
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.HealthFactorTooLow.selector, address(spoke), 1.4e18
+            )
+        );
+        guardedModule.executeGuardedBatch(
+            _singleExecution(address(spoke), _spokeCall(MockAaveV4Spoke.withdraw.selector, 1.6e18))
+        );
+
+        assertEq(spoke.collateral(smartAccount), 3e18, "withdraw rolled back");
+    }
+
+    /**
+     * @notice Test: setUsingAsCollateral(false) dropping health factor below the minimum reverts
+     */
+    function test_SpokeDisableCollateralBelowMinHealthFactorReverts() public {
+        MockAaveV4Spoke spoke = _deployAndWhitelistSpoke();
+        spoke.setPosition(smartAccount, 3e18, 1e18, true);
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.HealthFactorTooLow.selector, address(spoke), 0
+            )
+        );
+        guardedModule.executeGuardedBatch(
+            _singleExecution(
+                address(spoke),
+                abi.encodeWithSelector(
+                    MockAaveV4Spoke.setUsingAsCollateral.selector, RESERVE_ID, false, smartAccount
+                )
+            )
+        );
+
+        assertTrue(spoke.usingAsCollateral(smartAccount), "collateral toggle rolled back");
+    }
+
+    /**
+     * @notice Test: supply and repay never trigger the health factor check, even below the minimum
+     */
+    function test_SpokeSupplyAndRepaySkipHealthFactorCheck() public {
+        MockAaveV4Spoke spoke = _deployAndWhitelistSpoke();
+        spoke.setPosition(smartAccount, 1.1e18, 1e18, true);
+
+        Execution[] memory executions = new Execution[](2);
+        executions[0] = Execution({
+            target: address(spoke),
+            value: 0,
+            callData: _spokeCall(MockAaveV4Spoke.supply.selector, 0.1e18)
+        });
+        executions[1] = Execution({
+            target: address(spoke),
+            value: 0,
+            callData: _spokeCall(MockAaveV4Spoke.repay.selector, 0.1e18)
+        });
+
+        vm.expectCall(address(spoke), _accountDataCall(), 0);
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(executions);
+
+        assertEq(spoke.collateral(smartAccount), 1.2e18, "supply executed");
+        assertEq(spoke.debt(smartAccount), 0.9e18, "repay executed");
+    }
+
+    /**
+     * @notice Test: the check runs once per Spoke at the end of the batch, so borrow-then-repay
+     *         passes even though the intermediate health factor is below the minimum
+     */
+    function test_SpokeBorrowThenRepayChecksFinalHealthFactorOnce() public {
+        MockAaveV4Spoke spoke = _deployAndWhitelistSpoke();
+        spoke.setPosition(smartAccount, 3e18, 0, true);
+
+        Execution[] memory executions = new Execution[](3);
+        executions[0] = Execution({
+            target: address(spoke),
+            value: 0,
+            callData: _spokeCall(MockAaveV4Spoke.borrow.selector, 2.5e18)
+        });
+        executions[1] = Execution({
+            target: address(spoke),
+            value: 0,
+            callData: _spokeCall(MockAaveV4Spoke.borrow.selector, 0.5e18)
+        });
+        executions[2] = Execution({
+            target: address(spoke),
+            value: 0,
+            callData: _spokeCall(MockAaveV4Spoke.repay.selector, 1.5e18)
+        });
+
+        vm.expectCall(address(spoke), _accountDataCall(), 1);
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(executions);
+
+        assertEq(spoke.debt(smartAccount), 1.5e18, "final debt");
+    }
+
+    /**
+     * @notice Test: withdrawing everything with no debt passes (health factor is uint256 max)
+     */
+    function test_SpokeWithdrawWithoutDebtSucceeds() public {
+        MockAaveV4Spoke spoke = _deployAndWhitelistSpoke();
+        spoke.setPosition(smartAccount, 3e18, 0, true);
+
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(
+                address(spoke), _spokeCall(MockAaveV4Spoke.withdraw.selector, type(uint256).max)
+            )
+        );
+
+        assertEq(spoke.collateral(smartAccount), 0, "full withdraw executed");
+    }
+
+    /**
+     * @notice Test: every Spoke touched in a batch is checked, not only the first
+     */
+    function test_SpokeHealthFactorCheckedOnEverySpoke() public {
+        MockAaveV4Spoke spokeA = _deployAndWhitelistSpoke();
+        MockAaveV4Spoke spokeB = _deployAndWhitelistSpoke();
+        spokeA.setPosition(smartAccount, 3e18, 0, true);
+        spokeB.setPosition(smartAccount, 3e18, 0, true);
+
+        Execution[] memory executions = new Execution[](2);
+        executions[0] = Execution({
+            target: address(spokeA),
+            value: 0,
+            callData: _spokeCall(MockAaveV4Spoke.borrow.selector, 1e18)
+        });
+        executions[1] = Execution({
+            target: address(spokeB),
+            value: 0,
+            callData: _spokeCall(MockAaveV4Spoke.borrow.selector, 2.5e18)
+        });
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.HealthFactorTooLow.selector, address(spokeB), 1.2e18
+            )
+        );
+        guardedModule.executeGuardedBatch(executions);
+    }
+
+    /**
+     * @notice Fuzz: a borrow passes iff the resulting health factor is >= MIN_HEALTH_FACTOR
+     * @dev Collateral factor is 1 and debt is 1e18, so the resulting health factor equals
+     *      `collateral`.
+     */
+    function testFuzz_SpokeBorrowMinHealthFactorBoundary(uint256 collateral) public {
+        collateral = bound(collateral, 1e18, 3e18);
+        MockAaveV4Spoke spoke = _deployAndWhitelistSpoke();
+        spoke.setPosition(smartAccount, collateral, 0, true);
+
+        if (collateral < MIN_HEALTH_FACTOR) {
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    GuardedExecModuleUpgradeable.HealthFactorTooLow.selector,
+                    address(spoke),
+                    collateral
+                )
+            );
+        }
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(address(spoke), _spokeCall(MockAaveV4Spoke.borrow.selector, 1e18))
+        );
+
+        assertEq(spoke.debt(smartAccount), collateral < MIN_HEALTH_FACTOR ? 0 : 1e18, "debt");
     }
 }
