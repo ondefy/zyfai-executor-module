@@ -56,7 +56,8 @@ contract GuardedExecModuleAaveV4ForkTest is RhinestoneModuleKit, Test {
         vm.prank(owner);
         registry.addToWhitelist(targets, selectors);
 
-        GuardedExecModuleUpgradeable implementation = new GuardedExecModuleUpgradeable();
+        GuardedExecModuleUpgradeable implementation =
+            new GuardedExecModuleUpgradeable(0xaffD3c3cD06cf499deddf78b26868018A93f2C31);
         guardedModule = GuardedExecModuleUpgradeable(
             address(
                 new ERC1967Proxy(
