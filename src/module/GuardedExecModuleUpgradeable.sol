@@ -46,16 +46,15 @@ contract GuardedExecModuleUpgradeable is
      * @notice Selector of `setAuthorization(address,bool)` (Morpho Blue-style operator grant)
      * @dev A call to this selector makes the smart account grant `authorized` protocol-wide
      *      withdraw/borrow rights over its positions (e.g. Morpho Blue `setAuthorization`).
-     *      Like APPROVE_SELECTOR, the grantee argument must be a whitelisted target so a
-     *      session key can only ever authorize trusted contracts (the Zyfai Adapter), never
-     *      an arbitrary address.
+     *      The grantee argument must be ADAPTER, so a session key can never authorize any
+     *      other address.
      */
     bytes4 private constant SET_AUTHORIZATION_SELECTOR = 0xeecea000;
 
     /**
      * @notice Selector of `setOperator(address,bool)` (ERC-7540 operator grant, e.g. SuperVault)
      * @dev Same calldata layout and grantee rule as SET_AUTHORIZATION_SELECTOR: an operator can
-     *      act on the smart account's vault requests, so it must be a whitelisted target.
+     *      act on the smart account's vault requests, so it must be ADAPTER.
      */
     bytes4 private constant SET_OPERATOR_SELECTOR = 0x558a7297;
 
@@ -95,6 +94,18 @@ contract GuardedExecModuleUpgradeable is
      * @dev Standard ERC20 transfer/approve: 4 bytes (selector) + 32 bytes (address) + 32 bytes (amount) = 68 bytes
      */
     uint256 private constant MIN_TRANSFER_LENGTH = 68;
+
+    /*//////////////////////////////////////////////////////////////
+                               IMMUTABLES
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice The only address a session key may grant via setAuthorization / setOperator
+     * @dev Lives in the implementation bytecode, not proxy storage: changing it requires
+     *      deploying a new implementation and upgrading the proxy.
+     */
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    address public immutable ADAPTER;
 
     /*//////////////////////////////////////////////////////////////
                                STORAGE
@@ -153,6 +164,9 @@ contract GuardedExecModuleUpgradeable is
     /// @notice Thrown when registry address is zero
     error InvalidRegistry();
 
+    /// @notice Thrown when the Adapter address passed to the constructor is zero
+    error InvalidAdapter();
+
     /// @notice Thrown when batch operation arrays are empty
     error EmptyBatch();
 
@@ -195,9 +209,12 @@ contract GuardedExecModuleUpgradeable is
      * @notice Constructor for implementation contract
      * @dev Disables initialization in implementation contract to prevent direct use.
      *      Only proxy instances should be initialized via initialize().
+     * @param _adapter The Zyfai Adapter proxy for this deployment (the only allowed grantee)
      */
     /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
+    constructor(address _adapter) {
+        if (_adapter == address(0)) revert InvalidAdapter();
+        ADAPTER = _adapter;
         _disableInitializers();
     }
 
@@ -373,7 +390,7 @@ contract GuardedExecModuleUpgradeable is
             } else if (
                 selector == SET_AUTHORIZATION_SELECTOR || selector == SET_OPERATOR_SELECTOR
             ) {
-                _validateAuthorizationGrant(target, callData, callDataLength, reg);
+                _validateAuthorizationGrant(target, callData, callDataLength);
             } else if (
                 selector == SPOKE_BORROW_SELECTOR || selector == SPOKE_WITHDRAW_SELECTOR
                     || selector == SPOKE_SET_COLLATERAL_SELECTOR
@@ -489,18 +506,16 @@ contract GuardedExecModuleUpgradeable is
      *         `setOperator(address,bool)`)
      * @dev A grant like Morpho Blue `setAuthorization` gives the grantee global withdraw and
      *      borrow rights over the smart account's positions, bypassing every receiver binding
-     *      downstream. The grantee must therefore be a whitelisted target (trusted contract),
-     *      mirroring the ERC20 approve spender rule. Revokes (bool = false) are not restricted.
+     *      downstream. The grantee must therefore be ADAPTER, which pins the receiver to the
+     *      smart account. Revokes (bool = false) are not restricted.
      * @param target The protocol contract address (e.g. Morpho Blue singleton, SuperVault)
      * @param callData The encoded (address grantee, bool approved) call data
      * @param callDataLength The length of callData (cached to avoid repeated calldata loads)
-     * @param reg The cached registry instance for authorization check
      */
     function _validateAuthorizationGrant(
         address target,
         bytes calldata callData,
-        uint256 callDataLength,
-        TargetRegistry reg
+        uint256 callDataLength
     )
         internal
         view
@@ -508,17 +523,14 @@ contract GuardedExecModuleUpgradeable is
         // Grant calls must be exactly 68 bytes: 4 (selector) + 32 (grantee) + 32 (bool)
         if (callDataLength != MIN_TRANSFER_LENGTH) revert InvalidCalldata();
 
-        // A revoke only removes rights, so it is allowed for any grantee (including one that was
-        // de-whitelisted after the grant). Only an exact-zero bool word counts as a revoke.
+        // A revoke only removes rights, so it is allowed for any grantee (including one granted
+        // under an earlier rule). Only an exact-zero bool word counts as a revoke.
         if (bytes32(callData[36:68]) == bytes32(0)) return;
 
         // Extract grantee address from calldata (bytes 16-35, ignoring 12-byte padding)
         address authorized = address(bytes20(callData[16:36]));
 
-        // Grantee must be a whitelisted target (trusted contract), never an arbitrary address
-        if (!reg.whitelistedTargets(authorized)) {
-            revert UnauthorizedAuthorizationGrant(target, authorized);
-        }
+        if (authorized != ADAPTER) revert UnauthorizedAuthorizationGrant(target, authorized);
     }
 
     /**

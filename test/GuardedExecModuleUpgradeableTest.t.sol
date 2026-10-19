@@ -68,6 +68,9 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     bytes4 internal constant TRANSFER_SELECTOR = IERC20.transfer.selector;
     bytes4 internal constant APPROVE_SELECTOR = IERC20.approve.selector;
 
+    // Production Zyfai Adapter proxy (same address on Ethereum, Base, Arbitrum)
+    address internal constant ADAPTER = 0xaffD3c3cD06cf499deddf78b26868018A93f2C31;
+
     /**
      * @notice Helper function to convert arrays to Execution[] for testing
      */
@@ -141,7 +144,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         vm.stopPrank();
         
         // Deploy UPGRADEABLE module (implementation + proxy)
-        implementation = new GuardedExecModuleUpgradeable();
+        implementation = new GuardedExecModuleUpgradeable(ADAPTER);
         vm.label(address(implementation), "GuardedExecModuleUpgradeable_Implementation");
         
         // Encode initialization data
@@ -323,6 +326,8 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         address moduleRegistry = address(guardedModule.registry());
         
         assertEq(moduleRegistry, address(registry), "Registry should match");
+
+        assertEq(guardedModule.ADAPTER(), ADAPTER, "Adapter is read from the implementation");
         
         // Check version
         string memory version = guardedModule.version();
@@ -1210,7 +1215,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
      * @notice Test: Cannot initialize with zero registry address
      */
     function test_CannotInitializeWithZeroRegistry() public {
-        GuardedExecModuleUpgradeable newImpl = new GuardedExecModuleUpgradeable();
+        GuardedExecModuleUpgradeable newImpl = new GuardedExecModuleUpgradeable(ADAPTER);
 
         vm.expectRevert(GuardedExecModuleUpgradeable.InvalidRegistry.selector);
         new ERC1967Proxy(
@@ -1221,6 +1226,14 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
                 moduleOwner
             )
         );
+    }
+
+    /**
+     * @notice Test: Cannot deploy an implementation with a zero Adapter address
+     */
+    function test_CannotDeployImplementationWithZeroAdapter() public {
+        vm.expectRevert(GuardedExecModuleUpgradeable.InvalidAdapter.selector);
+        new GuardedExecModuleUpgradeable(address(0));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1246,19 +1259,16 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
 
     /**
-     * @notice Test: setAuthorization granting a whitelisted target (the Adapter) succeeds
-     * @dev uniswapPool stands in for the Zyfai Adapter: it is a whitelisted target, which is
-     *      exactly the condition the module enforces on the grantee.
+     * @notice Test: setAuthorization granting the Adapter succeeds
      */
-    function test_SetAuthorizationGrantToWhitelistedTargetSucceeds() public {
+    function test_SetAuthorizationGrantToAdapterSucceeds() public {
         MockMorphoBlue morpho = _deployAndWhitelistMorpho();
-        address adapter = address(uniswapPool); // whitelisted target stand-in
 
         address[] memory targets = new address[](1);
         bytes[] memory calldatas = new bytes[](1);
         uint256[] memory values = new uint256[](1);
         targets[0] = address(morpho);
-        calldatas[0] = abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, adapter, true);
+        calldatas[0] = abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, ADAPTER, true);
         values[0] = 0;
 
         Execution[] memory executions = _toExecutions(targets, calldatas, values);
@@ -1272,8 +1282,33 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         });
 
         assertTrue(
-            morpho.isAuthorized(smartAccount, adapter),
-            "Smart account should have authorized the whitelisted target"
+            morpho.isAuthorized(smartAccount, ADAPTER),
+            "Smart account should have authorized the Adapter"
+        );
+    }
+
+    /**
+     * @notice Test: setAuthorization granting a whitelisted target other than the Adapter reverts
+     * @dev A whitelisted token has no receiver binding; authorizing it would let anyone who can
+     *      make it call Morpho act on the smart account's positions.
+     */
+    function test_SetAuthorizationGrantToWhitelistedTokenReverts() public {
+        MockMorphoBlue morpho = _deployAndWhitelistMorpho();
+        address grantee = address(usdcToken);
+        assertTrue(registry.whitelistedTargets(grantee), "grantee is a whitelisted target");
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.UnauthorizedAuthorizationGrant.selector,
+                address(morpho),
+                grantee
+            )
+        );
+        guardedModule.executeGuardedBatch(
+            _singleExecution(
+                address(morpho), abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, grantee, true)
+            )
         );
     }
 
@@ -1313,11 +1348,11 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
 
     /**
-     * @notice Test: revoking (bool = false) a whitelisted grantee also passes validation
+     * @notice Test: granting then revoking (bool = false) the Adapter passes validation
      */
-    function test_SetAuthorizationRevokeWhitelistedTargetSucceeds() public {
+    function test_SetAuthorizationRevokeAdapterSucceeds() public {
         MockMorphoBlue morpho = _deployAndWhitelistMorpho();
-        address adapter = address(uniswapPool);
+        address adapter = ADAPTER;
 
         address[] memory targets = new address[](2);
         bytes[] memory calldatas = new bytes[](2);
@@ -1393,11 +1428,11 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
 
     /**
-     * @notice Fuzz: no non-whitelisted grantee can ever pass setAuthorization validation
+     * @notice Fuzz: no grantee other than the Adapter can ever pass setAuthorization validation
      */
-    function testFuzz_SetAuthorizationGrantOnlyWhitelistedTargets(address grantee) public {
+    function testFuzz_SetAuthorizationGrantOnlyAdapter(address grantee) public {
         MockMorphoBlue morpho = _deployAndWhitelistMorpho();
-        vm.assume(!registry.whitelistedTargets(grantee));
+        vm.assume(grantee != ADAPTER);
 
         address[] memory targets = new address[](1);
         bytes[] memory calldatas = new bytes[](1);
@@ -1432,34 +1467,16 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
 
     /**
-     * @notice Remove curvePool's only selector so it is no longer a whitelisted target
+     * @notice Test: a stale grant to a non-Adapter address (e.g. made under the previous
+     *         whitelisted-target rule) can still be revoked
      */
-    function _dewhitelistCurvePool() internal {
-        address[] memory targets = new address[](1);
-        bytes4[] memory selectors = new bytes4[](1);
-        targets[0] = address(curvePool);
-        selectors[0] = SWAP_SELECTOR;
-        vm.prank(registryOwner);
-        registry.removeFromWhitelist(targets, selectors);
-        assertFalse(registry.whitelistedTargets(address(curvePool)), "grantee de-whitelisted");
-    }
-
-    /**
-     * @notice Test: a grant can still be revoked after the grantee is de-whitelisted
-     */
-    function test_SetAuthorizationRevokeAfterDewhitelistSucceeds() public {
+    function test_SetAuthorizationRevokeNonAdapterGranteeSucceeds() public {
         MockMorphoBlue morpho = _deployAndWhitelistMorpho();
         address grantee = address(curvePool);
 
         vm.prank(smartAccount);
-        guardedModule.executeGuardedBatch(
-            _singleExecution(
-                address(morpho), abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, grantee, true)
-            )
-        );
-        assertTrue(morpho.isAuthorized(smartAccount, grantee), "granted");
-
-        _dewhitelistCurvePool();
+        morpho.setAuthorization(grantee, true);
+        assertTrue(morpho.isAuthorized(smartAccount, grantee), "stale grant present");
 
         vm.prank(smartAccount);
         guardedModule.executeGuardedBatch(
@@ -1468,29 +1485,6 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
             )
         );
         assertFalse(morpho.isAuthorized(smartAccount, grantee), "stale authorization revoked");
-    }
-
-    /**
-     * @notice Test: a grant to a de-whitelisted grantee still reverts
-     */
-    function test_SetAuthorizationGrantToDewhitelistedTargetReverts() public {
-        MockMorphoBlue morpho = _deployAndWhitelistMorpho();
-        address grantee = address(curvePool);
-        _dewhitelistCurvePool();
-
-        vm.prank(smartAccount);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                GuardedExecModuleUpgradeable.UnauthorizedAuthorizationGrant.selector,
-                address(morpho),
-                grantee
-            )
-        );
-        guardedModule.executeGuardedBatch(
-            _singleExecution(
-                address(morpho), abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, grantee, true)
-            )
-        );
     }
 
     /**
@@ -1539,19 +1533,41 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
 
     /**
-     * @notice Test: setOperator granting a whitelisted target (the Adapter) succeeds
+     * @notice Test: setOperator granting the Adapter succeeds
      */
-    function test_SetOperatorGrantToWhitelistedTargetSucceeds() public {
+    function test_SetOperatorGrantToAdapterSucceeds() public {
         MockOperatorVault vault = _deployAndWhitelistOperatorVault();
-        address adapter = address(uniswapPool); // whitelisted target stand-in
 
         vm.prank(smartAccount);
         guardedModule.executeGuardedBatch(
             _singleExecution(
-                address(vault), abi.encodeWithSelector(SET_OPERATOR_SELECTOR, adapter, true)
+                address(vault), abi.encodeWithSelector(SET_OPERATOR_SELECTOR, ADAPTER, true)
             )
         );
-        assertTrue(vault.isOperator(smartAccount, adapter), "whitelisted operator granted");
+        assertTrue(vault.isOperator(smartAccount, ADAPTER), "Adapter operator granted");
+    }
+
+    /**
+     * @notice Test: setOperator granting a whitelisted target other than the Adapter reverts
+     */
+    function test_SetOperatorGrantToWhitelistedTokenReverts() public {
+        MockOperatorVault vault = _deployAndWhitelistOperatorVault();
+        address grantee = address(usdcToken);
+        assertTrue(registry.whitelistedTargets(grantee), "grantee is a whitelisted target");
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.UnauthorizedAuthorizationGrant.selector,
+                address(vault),
+                grantee
+            )
+        );
+        guardedModule.executeGuardedBatch(
+            _singleExecution(
+                address(vault), abi.encodeWithSelector(SET_OPERATOR_SELECTOR, grantee, true)
+            )
+        );
     }
 
     /**

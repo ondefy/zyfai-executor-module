@@ -17,6 +17,7 @@ import { UUPSUpgradeable } from
  * PREREQUISITES:
  * - Set New TARGET_REGISTRY_ADDRESS env variable
  * - Set PROXY_ADDRESS env variable (existing proxy from previous deployment)
+ * - Set ADAPTER_ADDRESS env variable (Adapter proxy baked into the new implementation)
  */
 contract UpgradeAndUpdateModule is Script {
     // Existing proxy address (from previous deployment)
@@ -38,11 +39,14 @@ contract UpgradeAndUpdateModule is Script {
         console.log("Proxy address:", PROXY_ADDRESS);
         console.log("New registry address:", newRegistryAddress);
 
+        address adapter = vm.envAddress("ADAPTER_ADDRESS");
+        console.log("Adapter:", adapter);
+
         vm.startBroadcast(deployerPrivateKey);
 
         // Step 1: Deploy new implementation
         console.log("\n--- Step 1: Deploy new implementation ---");
-        GuardedExecModuleUpgradeable newImplementation = new GuardedExecModuleUpgradeable();
+        GuardedExecModuleUpgradeable newImplementation = new GuardedExecModuleUpgradeable(adapter);
         console.log("New implementation deployed to:", address(newImplementation));
 
         // Step 2: Upgrade proxy to new implementation
