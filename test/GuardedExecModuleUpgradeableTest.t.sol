@@ -472,6 +472,16 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
     
     /**
+     * @notice Test: Module owner cannot renounce ownership
+     */
+    function test_RenounceOwnershipDisabled() public {
+        vm.prank(moduleOwner);
+        vm.expectRevert(GuardedExecModuleUpgradeable.RenounceOwnershipDisabled.selector);
+        guardedModule.renounceOwnership();
+        assertEq(guardedModule.owner(), moduleOwner, "owner unchanged");
+    }
+
+    /**
      * @notice Test: Two-step ownership transfer works correctly
      * @dev Verifies that ownership transfer requires two steps: transferOwnership() then acceptOwnership()
      *      This prevents accidental or malicious immediate ownership transfers.

@@ -201,6 +201,9 @@ contract GuardedExecModuleUpgradeable is
     /// @notice Thrown when calldata is invalid (too short or malformed)
     error InvalidCalldata();
 
+    /// @notice Thrown when ownership renounce is attempted (disabled to preserve pause/upgrade/registry)
+    error RenounceOwnershipDisabled();
+
     /*//////////////////////////////////////////////////////////////
                              CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
@@ -426,6 +429,14 @@ contract GuardedExecModuleUpgradeable is
         s.registry = TargetRegistry(newRegistry);
         
         emit RegistryUpdated(oldRegistry, newRegistry);
+    }
+
+    /**
+     * @notice Ownership renounce is disabled
+     * @dev Renouncing would brick pause, registry migration, and UUPS upgrades on the module proxy.
+     */
+    function renounceOwnership() public pure override {
+        revert RenounceOwnershipDisabled();
     }
 
     /*//////////////////////////////////////////////////////////////
