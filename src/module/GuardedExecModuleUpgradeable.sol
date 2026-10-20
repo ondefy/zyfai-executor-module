@@ -9,6 +9,7 @@ import { ERC7579ExecutorBase } from "modulekit/Modules.sol";
 import { Execution } from "modulekit/accounts/erc7579/lib/ExecutionLib.sol";
 import { TargetRegistry } from "../registry/TargetRegistry.sol";
 import { IAaveV4Spoke } from "../interfaces/IAaveV4Spoke.sol";
+import { IIporWithdrawManager } from "../interfaces/IIporWithdrawManager.sol";
 
 /**
  * @title GuardedExecModuleUpgradeable
@@ -82,6 +83,17 @@ contract GuardedExecModuleUpgradeable is
      *      which leaves room for gap moves on volatile collateral such as tokenized equities.
      */
     uint256 private constant MIN_HEALTH_FACTOR = 1.5e18;
+
+    /**
+     * @notice Selector of IPOR Fusion WithdrawManager `requestShares(uint256)`
+     * @dev The WithdrawManager takes `shares * getRequestFee() / 1e18` from the caller's vault
+     *      shares, with no cap against the caller's balance and no approval. Shares are not
+     *      escrowed and each request overwrites the last, so with a non-zero fee a session key
+     *      could burn the whole position. The call is only allowed while the fee is 0.
+     *      Any target whitelisted with this selector must be an IPOR WithdrawManager: on any
+     *      other contract the `getRequestFee` call reverts the batch.
+     */
+    bytes4 private constant REQUEST_SHARES_SELECTOR = 0xfc415e9c;
 
     /**
      * @notice Minimum calldata length required to extract function selector
@@ -197,6 +209,11 @@ contract GuardedExecModuleUpgradeable is
     /// @param spoke The Aave v4 Spoke whose health factor check failed
     /// @param healthFactor The smart account's health factor on that Spoke after the batch (WAD)
     error HealthFactorTooLow(address spoke, uint256 healthFactor);
+
+    /// @notice Thrown when requestShares targets a WithdrawManager with a non-zero request fee
+    /// @param withdrawManager The IPOR Fusion WithdrawManager called with requestShares
+    /// @param fee The WithdrawManager's current request fee (WAD)
+    error RequestFeeNotZero(address withdrawManager, uint256 fee);
 
     /// @notice Thrown when calldata is invalid (too short or malformed)
     error InvalidCalldata();
@@ -396,6 +413,9 @@ contract GuardedExecModuleUpgradeable is
                     || selector == SPOKE_SET_COLLATERAL_SELECTOR
             ) {
                 spokeCount = _recordSpoke(spokes, spokeCount, target);
+            } else if (selector == REQUEST_SHARES_SELECTOR) {
+                uint256 fee = IIporWithdrawManager(target).getRequestFee();
+                if (fee != 0) revert RequestFeeNotZero(target, fee);
             }
             
             unchecked {

@@ -12,6 +12,8 @@ import { UUPSUpgradeable } from
 import { MockDeFiPool } from "test/mocks/MockDeFiPool.sol";
 import { MockERC20 } from "test/mocks/MockERC20.sol";
 import { MockAaveV4Spoke } from "test/mocks/MockAaveV4Spoke.sol";
+import { MockIporWithdrawManager, MockPlasmaVaultShares } from
+    "test/mocks/MockIporWithdrawManager.sol";
 import { MockMorphoBlue } from "test/mocks/MockMorphoBlue.sol";
 import { MockOperatorVault } from "test/mocks/MockOperatorVault.sol";
 import { MockSafeWallet } from "test/mocks/MockSafeWallet.sol";
@@ -1892,5 +1894,124 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         );
 
         assertEq(spoke.debt(smartAccount), collateral < MIN_HEALTH_FACTOR ? 0 : 1e18, "debt");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    IPOR WITHDRAW MANAGER REQUEST FEE
+    //////////////////////////////////////////////////////////////*/
+
+    uint256 internal constant VAULT_SHARES = 100e18;
+
+    /**
+     * @notice Deploy a mock IPOR WithdrawManager, whitelist requestShares on it and give the
+     *         smart account VAULT_SHARES vault shares
+     */
+    function _deployAndWhitelistWithdrawManager(uint256 fee)
+        internal
+        returns (MockIporWithdrawManager wm, MockPlasmaVaultShares shares)
+    {
+        wm = new MockIporWithdrawManager();
+        vm.label(address(wm), "MockIporWithdrawManager");
+        wm.updateRequestFee(fee);
+        shares = wm.plasmaVault();
+        shares.mint(smartAccount, VAULT_SHARES);
+
+        vm.startPrank(registryOwner);
+        address[] memory whitelistTargets = new address[](1);
+        bytes4[] memory whitelistSelectors = new bytes4[](1);
+        whitelistTargets[0] = address(wm);
+        whitelistSelectors[0] = MockIporWithdrawManager.requestShares.selector;
+        registry.addToWhitelist(whitelistTargets, whitelistSelectors);
+        vm.stopPrank();
+    }
+
+    function _requestSharesCall(uint256 amount) internal pure returns (bytes memory) {
+        return abi.encodeCall(MockIporWithdrawManager.requestShares, (amount));
+    }
+
+    /**
+     * @notice Test: requestShares passes while the request fee is 0 and takes no shares
+     */
+    function test_RequestSharesWithZeroFeeSucceeds() public {
+        (MockIporWithdrawManager wm, MockPlasmaVaultShares shares) =
+            _deployAndWhitelistWithdrawManager(0);
+
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(address(wm), _requestSharesCall(VAULT_SHARES))
+        );
+
+        assertEq(wm.requestedShares(smartAccount), VAULT_SHARES, "request recorded");
+        assertEq(shares.balanceOf(smartAccount), VAULT_SHARES, "no fee taken");
+    }
+
+    /**
+     * @notice Test: auditor scenario. With a 1% fee, requestShares(balance * 1e18 / fee) would
+     *         take the whole balance as fee; the module rejects it and the shares stay put.
+     */
+    function test_RequestSharesWithFeeRevertsAndKeepsShares() public {
+        uint256 fee = 0.01e18;
+        (MockIporWithdrawManager wm, MockPlasmaVaultShares shares) =
+            _deployAndWhitelistWithdrawManager(fee);
+        uint256 drainAmount = VAULT_SHARES * 1e18 / fee;
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.RequestFeeNotZero.selector, address(wm), fee
+            )
+        );
+        guardedModule.executeGuardedBatch(
+            _singleExecution(address(wm), _requestSharesCall(drainAmount))
+        );
+
+        assertEq(shares.balanceOf(smartAccount), VAULT_SHARES, "shares untouched");
+        assertEq(wm.requestedShares(smartAccount), 0, "no request recorded");
+
+        // The same call made directly by the account does burn the whole position
+        vm.prank(smartAccount);
+        wm.requestShares(drainAmount);
+        assertEq(shares.balanceOf(smartAccount), 0, "direct call drains the position");
+    }
+
+    /**
+     * @notice Regression: repeated requestShares capped at the current balance cannot drain the
+     *         smart account through the module (fails on the module without the fee check)
+     */
+    function test_RequestSharesRepeatedCappedRequestsCannotDrain() public {
+        (MockIporWithdrawManager wm, MockPlasmaVaultShares shares) =
+            _deployAndWhitelistWithdrawManager(0.5e18);
+
+        for (uint256 i = 0; i < 10; i++) {
+            Execution[] memory request =
+                _singleExecution(address(wm), _requestSharesCall(shares.balanceOf(smartAccount)));
+            vm.prank(smartAccount);
+            try guardedModule.executeGuardedBatch(request) { } catch { }
+        }
+
+        assertEq(shares.balanceOf(smartAccount), VAULT_SHARES, "shares untouched");
+    }
+
+    /**
+     * @notice Fuzz: requestShares passes iff the request fee is 0
+     */
+    function testFuzz_RequestSharesOnlyAtZeroFee(uint256 fee) public {
+        fee = bound(fee, 0, 1e18);
+        (MockIporWithdrawManager wm, MockPlasmaVaultShares shares) =
+            _deployAndWhitelistWithdrawManager(fee);
+
+        if (fee != 0) {
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    GuardedExecModuleUpgradeable.RequestFeeNotZero.selector, address(wm), fee
+                )
+            );
+        }
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(address(wm), _requestSharesCall(VAULT_SHARES))
+        );
+
+        assertEq(shares.balanceOf(smartAccount), VAULT_SHARES, "shares untouched");
     }
 }
