@@ -1929,8 +1929,18 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         return abi.encodeCall(MockIporWithdrawManager.requestShares, (amount));
     }
 
+    function _requestTwice(address first, address second, uint256 amount)
+        internal
+        pure
+        returns (Execution[] memory executions)
+    {
+        executions = new Execution[](2);
+        executions[0] = Execution({ target: first, value: 0, callData: _requestSharesCall(amount) });
+        executions[1] = Execution({ target: second, value: 0, callData: _requestSharesCall(amount) });
+    }
+
     /**
-     * @notice Test: requestShares passes while the request fee is 0 and takes no shares
+     * @notice Test: at fee 0 requestShares is unrestricted and takes no shares
      */
     function test_RequestSharesWithZeroFeeSucceeds() public {
         (MockIporWithdrawManager wm, MockPlasmaVaultShares shares) =
@@ -1940,16 +1950,36 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         guardedModule.executeGuardedBatch(
             _singleExecution(address(wm), _requestSharesCall(VAULT_SHARES))
         );
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(_requestTwice(address(wm), address(wm), VAULT_SHARES));
 
         assertEq(wm.requestedShares(smartAccount), VAULT_SHARES, "request recorded");
         assertEq(shares.balanceOf(smartAccount), VAULT_SHARES, "no fee taken");
     }
 
     /**
+     * @notice Test: with a fee, a request up to the balance passes and pays the fee once
+     */
+    function test_RequestSharesWithFeeWithinBalanceSucceeds() public {
+        uint256 fee = 0.002e18;
+        (MockIporWithdrawManager wm, MockPlasmaVaultShares shares) =
+            _deployAndWhitelistWithdrawManager(fee);
+
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(address(wm), _requestSharesCall(VAULT_SHARES))
+        );
+
+        uint256 feeAmount = VAULT_SHARES * fee / 1e18;
+        assertEq(wm.requestedShares(smartAccount), VAULT_SHARES - feeAmount, "request net of fee");
+        assertEq(shares.balanceOf(smartAccount), VAULT_SHARES - feeAmount, "fee paid once");
+    }
+
+    /**
      * @notice Test: auditor scenario. With a 1% fee, requestShares(balance * 1e18 / fee) would
      *         take the whole balance as fee; the module rejects it and the shares stay put.
      */
-    function test_RequestSharesWithFeeRevertsAndKeepsShares() public {
+    function test_RequestSharesAboveBalanceRevertsAndKeepsShares() public {
         uint256 fee = 0.01e18;
         (MockIporWithdrawManager wm, MockPlasmaVaultShares shares) =
             _deployAndWhitelistWithdrawManager(fee);
@@ -1958,7 +1988,10 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         vm.prank(smartAccount);
         vm.expectRevert(
             abi.encodeWithSelector(
-                GuardedExecModuleUpgradeable.RequestFeeNotZero.selector, address(wm), fee
+                GuardedExecModuleUpgradeable.RequestExceedsBalance.selector,
+                address(wm),
+                drainAmount,
+                VAULT_SHARES
             )
         );
         guardedModule.executeGuardedBatch(
@@ -1975,43 +2008,138 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
 
     /**
-     * @notice Regression: repeated requestShares capped at the current balance cannot drain the
-     *         smart account through the module (fails on the module without the fee check)
+     * @notice Test: with a fee, a request cannot replace one whose window is still open; it can
+     *         once the window has passed or the request was redeemed
      */
-    function test_RequestSharesRepeatedCappedRequestsCannotDrain() public {
-        (MockIporWithdrawManager wm, MockPlasmaVaultShares shares) =
-            _deployAndWhitelistWithdrawManager(0.5e18);
+    function test_RequestSharesWithFeeOnePerWindow() public {
+        (MockIporWithdrawManager wm,) = _deployAndWhitelistWithdrawManager(0.01e18);
+        Execution[] memory request = _singleExecution(address(wm), _requestSharesCall(1e18));
 
-        for (uint256 i = 0; i < 10; i++) {
-            Execution[] memory request =
-                _singleExecution(address(wm), _requestSharesCall(shares.balanceOf(smartAccount)));
-            vm.prank(smartAccount);
-            try guardedModule.executeGuardedBatch(request) { } catch { }
-        }
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(request);
+        uint256 windowEnd = block.timestamp + wm.getWithdrawWindow();
+
+        vm.warp(windowEnd);
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.RequestAlreadyPending.selector, address(wm), windowEnd
+            )
+        );
+        guardedModule.executeGuardedBatch(request);
+
+        vm.warp(windowEnd + 1);
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(request);
+
+        wm.clearRequest(smartAccount);
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(request);
+    }
+
+    /**
+     * @notice Test: with a fee, a batch cannot send two requests to the same WithdrawManager,
+     *         but may send one to each of two WithdrawManagers
+     */
+    function test_RequestSharesWithFeeOnePerWithdrawManagerPerBatch() public {
+        (MockIporWithdrawManager wm,) = _deployAndWhitelistWithdrawManager(0.01e18);
+        (MockIporWithdrawManager otherWm, MockPlasmaVaultShares otherShares) =
+            _deployAndWhitelistWithdrawManager(0.01e18);
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.DuplicateRequest.selector, address(wm)
+            )
+        );
+        guardedModule.executeGuardedBatch(_requestTwice(address(wm), address(wm), 1e18));
+
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(_requestTwice(address(wm), address(otherWm), 1e18));
+        assertGt(wm.requestedShares(smartAccount), 0, "first request");
+        assertGt(otherWm.requestedShares(smartAccount), 0, "second request");
+        assertLt(otherShares.balanceOf(smartAccount), VAULT_SHARES, "second fee paid");
+    }
+
+    /**
+     * @notice Test: a request fee above MAX_REQUEST_FEE (1%) is rejected
+     */
+    function test_RequestSharesFeeAboveCapReverts() public {
+        uint256 fee = 0.01e18 + 1;
+        (MockIporWithdrawManager wm, MockPlasmaVaultShares shares) =
+            _deployAndWhitelistWithdrawManager(fee);
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.RequestFeeTooHigh.selector, address(wm), fee
+            )
+        );
+        guardedModule.executeGuardedBatch(_singleExecution(address(wm), _requestSharesCall(1e18)));
 
         assertEq(shares.balanceOf(smartAccount), VAULT_SHARES, "shares untouched");
     }
 
     /**
-     * @notice Fuzz: requestShares passes iff the request fee is 0
+     * @notice Test: with a fee, a withdraw window shorter than 1 day is rejected, so a session
+     *         key cannot repeat requests faster than once a day
      */
-    function testFuzz_RequestSharesOnlyAtZeroFee(uint256 fee) public {
-        fee = bound(fee, 0, 1e18);
+    function test_RequestSharesWithFeeShortWindowReverts() public {
+        (MockIporWithdrawManager wm, MockPlasmaVaultShares shares) =
+            _deployAndWhitelistWithdrawManager(0.01e18);
+        wm.updateWithdrawWindow(1 days - 1);
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.WithdrawWindowTooShort.selector,
+                address(wm),
+                1 days - 1
+            )
+        );
+        guardedModule.executeGuardedBatch(_singleExecution(address(wm), _requestSharesCall(1e18)));
+
+        assertEq(shares.balanceOf(smartAccount), VAULT_SHARES, "shares untouched");
+    }
+
+    /**
+     * @notice Test: requestShares calldata must be exactly selector + one word
+     */
+    function test_RequestSharesInvalidCalldataReverts() public {
+        (MockIporWithdrawManager wm,) = _deployAndWhitelistWithdrawManager(0);
+
+        vm.prank(smartAccount);
+        vm.expectRevert(GuardedExecModuleUpgradeable.InvalidCalldata.selector);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(address(wm), abi.encodePacked(_requestSharesCall(1e18), uint256(0)))
+        );
+    }
+
+    /**
+     * @notice Fuzz: whatever amounts a session key requests within one window, with any fee up
+     *         to the cap the smart account loses at most fee * balance
+     */
+    function testFuzz_RequestSharesLossBoundedPerWindow(
+        uint256 fee,
+        uint256[5] memory amounts
+    )
+        public
+    {
+        fee = bound(fee, 1, 0.01e18);
         (MockIporWithdrawManager wm, MockPlasmaVaultShares shares) =
             _deployAndWhitelistWithdrawManager(fee);
 
-        if (fee != 0) {
-            vm.expectRevert(
-                abi.encodeWithSelector(
-                    GuardedExecModuleUpgradeable.RequestFeeNotZero.selector, address(wm), fee
-                )
-            );
+        for (uint256 i = 0; i < amounts.length; i++) {
+            Execution[] memory request =
+                _singleExecution(address(wm), _requestSharesCall(bound(amounts[i], 1, type(uint128).max)));
+            vm.prank(smartAccount);
+            try guardedModule.executeGuardedBatch(request) { } catch { }
         }
-        vm.prank(smartAccount);
-        guardedModule.executeGuardedBatch(
-            _singleExecution(address(wm), _requestSharesCall(VAULT_SHARES))
-        );
 
-        assertEq(shares.balanceOf(smartAccount), VAULT_SHARES, "shares untouched");
+        assertGe(
+            shares.balanceOf(smartAccount),
+            VAULT_SHARES - VAULT_SHARES * fee / 1e18,
+            "loss above fee * balance"
+        );
     }
 }

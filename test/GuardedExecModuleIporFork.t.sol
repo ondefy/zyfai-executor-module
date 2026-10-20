@@ -6,6 +6,7 @@ import { RhinestoneModuleKit, ModuleKitHelpers, AccountInstance } from "moduleki
 import { MODULE_TYPE_EXECUTOR } from "modulekit/accounts/common/interfaces/IERC7579Module.sol";
 import { Execution } from "modulekit/accounts/erc7579/lib/ExecutionLib.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { TargetRegistry } from "src/registry/TargetRegistry.sol";
 import { GuardedExecModuleUpgradeable } from "src/module/GuardedExecModuleUpgradeable.sol";
 import { IIporWithdrawManager } from "src/interfaces/IIporWithdrawManager.sol";
@@ -86,33 +87,73 @@ contract GuardedExecModuleIporForkTest is RhinestoneModuleKit, Test {
     }
 
     /**
-     * @notice Test: requestShares passes on the live WithdrawManager at fee 0, and reverts once
-     *         IPOR governance sets a non-zero request fee
+     * @notice Test: requestShares is unrestricted on the live WithdrawManager at fee 0. Once IPOR
+     *         governance sets a 1% request fee, a request must fit the account's shares, one
+     *         per withdraw window, and a fee above 1% is rejected.
      */
-    function test_Fork_RequestSharesBlockedOnceRequestFeeIsSet() public {
-        assertEq(IIporWithdrawManager(WITHDRAW_MANAGER).getRequestFee(), 0, "prod fee is 0");
+    function test_Fork_RequestSharesBoundedOnceRequestFeeIsSet() public {
+        IIporWithdrawManager manager = IIporWithdrawManager(WITHDRAW_MANAGER);
+        assertEq(manager.getRequestFee(), 0, "prod fee is 0");
 
         vm.prank(account);
         guardedModule.executeGuardedBatch(_requestShares(1e10));
-        assertEq(
-            IWithdrawManagerAdmin(WITHDRAW_MANAGER).requestInfo(account).shares,
-            1e10,
-            "request recorded"
-        );
+        IWithdrawManagerAdmin.WithdrawRequestInfo memory pending =
+            IWithdrawManagerAdmin(WITHDRAW_MANAGER).requestInfo(account);
+        assertEq(pending.shares, 1e10, "request recorded");
 
-        address feeSetter = makeAddr("feeSetter");
-        vm.prank(ATOMIST);
-        IIporAccessManager(ACCESS_MANAGER).grantRole(REQUEST_FEE_ROLE, feeSetter, 0);
-        vm.prank(feeSetter);
-        IWithdrawManagerAdmin(WITHDRAW_MANAGER).updateRequestFee(0.01e18);
+        _setRequestFee(0.01e18);
+        IERC20 vaultShares = IERC20(manager.getPlasmaVaultAddress());
+        uint256 balance = 1e20;
+        deal(address(vaultShares), account, balance);
 
         vm.prank(account);
         vm.expectRevert(
             abi.encodeWithSelector(
-                GuardedExecModuleUpgradeable.RequestFeeNotZero.selector, WITHDRAW_MANAGER, 0.01e18
+                GuardedExecModuleUpgradeable.RequestAlreadyPending.selector,
+                WITHDRAW_MANAGER,
+                pending.endWithdrawWindowTimestamp
             )
         );
         guardedModule.executeGuardedBatch(_requestShares(1e10));
+
+        vm.warp(pending.endWithdrawWindowTimestamp + 1);
+
+        vm.prank(account);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.RequestExceedsBalance.selector,
+                WITHDRAW_MANAGER,
+                balance * 100,
+                balance
+            )
+        );
+        guardedModule.executeGuardedBatch(_requestShares(balance * 100));
+
+        vm.prank(account);
+        guardedModule.executeGuardedBatch(_requestShares(balance));
+        assertEq(vaultShares.balanceOf(account), balance - balance / 100, "1% fee paid once");
+
+        vm.prank(account);
+        vm.expectPartialRevert(GuardedExecModuleUpgradeable.RequestAlreadyPending.selector);
+        guardedModule.executeGuardedBatch(_requestShares(balance / 2));
+
+        vm.warp(block.timestamp + 1 days + 1);
+        _setRequestFee(0.02e18);
+        vm.prank(account);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.RequestFeeTooHigh.selector, WITHDRAW_MANAGER, 0.02e18
+            )
+        );
+        guardedModule.executeGuardedBatch(_requestShares(balance / 2));
+    }
+
+    function _setRequestFee(uint256 fee) internal {
+        address feeSetter = makeAddr("feeSetter");
+        vm.prank(ATOMIST);
+        IIporAccessManager(ACCESS_MANAGER).grantRole(REQUEST_FEE_ROLE, feeSetter, 0);
+        vm.prank(feeSetter);
+        IWithdrawManagerAdmin(WITHDRAW_MANAGER).updateRequestFee(fee);
     }
 
     function _requestShares(uint256 shares) internal pure returns (Execution[] memory e) {

@@ -89,11 +89,25 @@ contract GuardedExecModuleUpgradeable is
      * @dev The WithdrawManager takes `shares * getRequestFee() / 1e18` from the caller's vault
      *      shares, with no cap against the caller's balance and no approval. Shares are not
      *      escrowed and each request overwrites the last, so with a non-zero fee a session key
-     *      could burn the whole position. The call is only allowed while the fee is 0.
+     *      could burn the position, in one oversized request or by repeating requests. While
+     *      the fee is non-zero, a request must not exceed the smart account's vault shares,
+     *      must not replace a request whose withdraw window is still open, must be the only
+     *      one to that WithdrawManager in the batch, the fee must be at most MAX_REQUEST_FEE
+     *      and the withdraw window at least MIN_WITHDRAW_WINDOW. A session key can then cost
+     *      at most MAX_REQUEST_FEE of the position per vault per MIN_WITHDRAW_WINDOW.
      *      Any target whitelisted with this selector must be an IPOR WithdrawManager: on any
      *      other contract the `getRequestFee` call reverts the batch.
      */
     bytes4 private constant REQUEST_SHARES_SELECTOR = 0xfc415e9c;
+
+    /// @notice Highest IPOR request fee (WAD) a batch may pay; observed fees are 0 to 0.2%
+    uint256 private constant MAX_REQUEST_FEE = 0.01e18;
+
+    /// @notice Shortest IPOR withdraw window accepted while the request fee is non-zero
+    uint256 private constant MIN_WITHDRAW_WINDOW = 1 days;
+
+    /// @notice `requestShares(uint256)` calldata length: 4 (selector) + 32 (shares)
+    uint256 private constant REQUEST_SHARES_LENGTH = 36;
 
     /**
      * @notice Minimum calldata length required to extract function selector
@@ -210,10 +224,33 @@ contract GuardedExecModuleUpgradeable is
     /// @param healthFactor The smart account's health factor on that Spoke after the batch (WAD)
     error HealthFactorTooLow(address spoke, uint256 healthFactor);
 
-    /// @notice Thrown when requestShares targets a WithdrawManager with a non-zero request fee
+    /// @notice Thrown when requestShares targets a WithdrawManager whose request fee exceeds
+    ///         MAX_REQUEST_FEE
     /// @param withdrawManager The IPOR Fusion WithdrawManager called with requestShares
     /// @param fee The WithdrawManager's current request fee (WAD)
-    error RequestFeeNotZero(address withdrawManager, uint256 fee);
+    error RequestFeeTooHigh(address withdrawManager, uint256 fee);
+
+    /// @notice Thrown when a fee-charging request asks for more shares than the smart account holds
+    /// @param withdrawManager The IPOR Fusion WithdrawManager called with requestShares
+    /// @param shares The requested shares
+    /// @param balance The smart account's vault shares before the batch
+    error RequestExceedsBalance(address withdrawManager, uint256 shares, uint256 balance);
+
+    /// @notice Thrown when a fee-charging request would replace a request whose withdraw window
+    ///         is still open
+    /// @param withdrawManager The IPOR Fusion WithdrawManager called with requestShares
+    /// @param endWithdrawWindowTimestamp End of the pending request's withdraw window
+    error RequestAlreadyPending(address withdrawManager, uint256 endWithdrawWindowTimestamp);
+
+    /// @notice Thrown when a fee-charging WithdrawManager's withdraw window is below
+    ///         MIN_WITHDRAW_WINDOW
+    /// @param withdrawManager The IPOR Fusion WithdrawManager called with requestShares
+    /// @param withdrawWindow The WithdrawManager's current withdraw window (seconds)
+    error WithdrawWindowTooShort(address withdrawManager, uint256 withdrawWindow);
+
+    /// @notice Thrown when a batch sends more than one fee-charging request to a WithdrawManager
+    /// @param withdrawManager The IPOR Fusion WithdrawManager called with requestShares
+    error DuplicateRequest(address withdrawManager);
 
     /// @notice Thrown when calldata is invalid (too short or malformed)
     error InvalidCalldata();
@@ -374,6 +411,8 @@ contract GuardedExecModuleUpgradeable is
         bytes4[] memory selectors = new bytes4[](length);
         address[] memory spokes = new address[](length);
         uint256 spokeCount;
+        address[] memory withdrawManagers = new address[](length);
+        uint256 withdrawManagerCount;
         GuardedExecModuleStorage storage s = _getGuardedExecModuleStorage();
         TargetRegistry reg = s.registry;
         
@@ -414,8 +453,9 @@ contract GuardedExecModuleUpgradeable is
             ) {
                 spokeCount = _recordSpoke(spokes, spokeCount, target);
             } else if (selector == REQUEST_SHARES_SELECTOR) {
-                uint256 fee = IIporWithdrawManager(target).getRequestFee();
-                if (fee != 0) revert RequestFeeNotZero(target, fee);
+                withdrawManagerCount = _validateRequestShares(
+                    withdrawManagers, withdrawManagerCount, target, callData, callDataLength
+                );
             }
             
             unchecked {
@@ -601,6 +641,60 @@ contract GuardedExecModuleUpgradeable is
             unchecked {
                 ++i;
             }
+        }
+    }
+
+    /**
+     * @notice Bound an IPOR WithdrawManager `requestShares(uint256)` call while its fee is non-zero
+     * @dev Runs before execution, so balance and pending request are read before the batch; the
+     *      one-request-per-WithdrawManager rule stops a second call from reusing that state.
+     *      The WithdrawManager keys requests on its caller, here msg.sender (the smart account).
+     * @param withdrawManagers The fee-charging WithdrawManagers requested so far in this batch
+     * @param count The number of recorded WithdrawManagers
+     * @param withdrawManager The WithdrawManager targeted by the current execution
+     * @param callData The encoded requestShares(uint256 shares) call data
+     * @param callDataLength The length of callData (cached to avoid repeated calldata loads)
+     * @return The updated number of recorded WithdrawManagers
+     */
+    function _validateRequestShares(
+        address[] memory withdrawManagers,
+        uint256 count,
+        address withdrawManager,
+        bytes calldata callData,
+        uint256 callDataLength
+    )
+        internal
+        view
+        returns (uint256)
+    {
+        if (callDataLength != REQUEST_SHARES_LENGTH) revert InvalidCalldata();
+
+        IIporWithdrawManager manager = IIporWithdrawManager(withdrawManager);
+        uint256 fee = manager.getRequestFee();
+        if (fee == 0) return count;
+        if (fee > MAX_REQUEST_FEE) revert RequestFeeTooHigh(withdrawManager, fee);
+
+        uint256 shares = uint256(bytes32(callData[4:36]));
+        uint256 balance = IERC20(manager.getPlasmaVaultAddress()).balanceOf(msg.sender);
+        if (shares > balance) revert RequestExceedsBalance(withdrawManager, shares, balance);
+
+        IIporWithdrawManager.WithdrawRequestInfo memory request = manager.requestInfo(msg.sender);
+        if (request.withdrawWindowInSeconds < MIN_WITHDRAW_WINDOW) {
+            revert WithdrawWindowTooShort(withdrawManager, request.withdrawWindowInSeconds);
+        }
+        if (request.shares != 0 && block.timestamp <= request.endWithdrawWindowTimestamp) {
+            revert RequestAlreadyPending(withdrawManager, request.endWithdrawWindowTimestamp);
+        }
+
+        for (uint256 i = 0; i < count;) {
+            if (withdrawManagers[i] == withdrawManager) revert DuplicateRequest(withdrawManager);
+            unchecked {
+                ++i;
+            }
+        }
+        withdrawManagers[count] = withdrawManager;
+        unchecked {
+            return count + 1;
         }
     }
 }
