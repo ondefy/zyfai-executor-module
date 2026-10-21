@@ -14,6 +14,7 @@ import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy
  *
  * PREREQUISITES:
  * - Set PROXY_ADDRESS env variable (existing proxy from previous deployment)
+ * - Set ADAPTER_ADDRESS env variable (Adapter proxy baked into the new implementation)
  */
 contract DeployTargetRegistryAndUpgrade is Script {
     // Existing proxy address (from previous deployment)
@@ -22,6 +23,7 @@ contract DeployTargetRegistryAndUpgrade is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
+        address adapter = vm.envAddress("ADAPTER_ADDRESS");
 
         console.log("=== Complete Deployment ===");
         console.log("Deployer:", deployer);
@@ -38,7 +40,7 @@ contract DeployTargetRegistryAndUpgrade is Script {
 
         // Step 2: Deploy new implementation
         console.log("\n=== Step 2: Deploy new GuardedExecModuleUpgradeable implementation ===");
-        GuardedExecModuleUpgradeable newImplementation = new GuardedExecModuleUpgradeable();
+        GuardedExecModuleUpgradeable newImplementation = new GuardedExecModuleUpgradeable(adapter);
         console.log("New implementation deployed to:", address(newImplementation));
 
         // Step 3: Upgrade proxy to new implementation

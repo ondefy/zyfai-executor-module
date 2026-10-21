@@ -22,6 +22,7 @@ contract DeployWithCREATE3 is Script {
         address guardian = vm.addr(pk);                 // use as init guardian or owner as you wish
         address owner    = guardian;
         address registry = vm.envAddress("TARGET_REGISTRY_ADDRESS"); // may differ per chain
+        address adapter  = vm.envAddress("ADAPTER_ADDRESS");
 
         vm.startBroadcast(pk);
 
@@ -38,8 +39,10 @@ contract DeployWithCREATE3 is Script {
         Create3Factory factory = Create3Factory(predictedFactory);
 
         // === 1) Deploy IMPLEMENTATION via CREATE3 (address depends only on salt) ===
-        // Implementation constructor takes no args (it's upgradeable)
-        bytes memory implCode = type(GuardedExecModuleUpgradeable).creationCode;
+        // Implementation constructor takes the Adapter address
+        bytes memory implCode = abi.encodePacked(
+            type(GuardedExecModuleUpgradeable).creationCode, abi.encode(adapter)
+        );
         address implPred = factory.compute(IMPL_SALT);
         if (_codeSize(implPred) == 0) {
             implPred = factory.deploy(IMPL_SALT, implCode);
