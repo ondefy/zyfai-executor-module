@@ -1,212 +1,258 @@
-# Response to your technical and security review
+# Your dedicated Base setup: answers to the review and deployment plan
 
-Thank you for the depth of the review — every observation in it is materially correct, and we
-answer all eight below. First, your two governing conditions:
+Thank you for the review. It is accurate, and everything it asks for is doable. This document
+does three things:
 
-- **No Zyfai key may act alone.** Accepted. Anything shared moves behind a 2-of-2 Safe with
-  you; after the final handover, Zyfai retains no ownership power over your stack at all. The
-  only Zyfai-side authority that remains is the agent session key, whose exact, on-chain scope
-  is specified in point 7 and is revocable by your Safe at any time.
-- **Every safety property verifiable on-chain.** Accepted. Each commitment below states the
-  on-chain check that proves it. We do not ask you to take anything on trust.
+1. Summarizes what your deployment will look like, and how it differs from the test setup
+   you reviewed.
+2. Answers each of the eight points, with the on-chain check that proves each commitment.
+3. Lists the few inputs we need from you to deploy.
 
-Addresses referenced throughout (Base):
+We accept both of your conditions as stated:
 
-| Contract | Address |
-|---|---|
-| TargetRegistry | `0xE23791a655Ad7707DB955d3a86f5e4e647799D95` |
-| GuardedExecModule proxy | `0x9d7d5F76d8f529e4dDcDF7aC62e11A36e516BE17` |
-| Adapter proxy | `0x4439eF06551D0580B4ebc5c2a2AB87cF4C1F9c64` |
-| Adapter beacon | `0x0b7367de36Bc208E0A223fE5dCDcb89645c4E002` |
+- **No Zyfai key may act alone.** Your infrastructure is owned by a 2-of-2 Safe with one
+  Zyfai signer and one of yours. Your smart account is owned by you alone.
+- **Every safety property is verifiable on-chain.** Each point below states what to read and
+  where. We do not ask you to rely on attestations.
 
 ---
 
-## 1. Ownership of all four contracts
+## 1. Your deployment at a glance
 
-Correct on both counts: all four are owned by a single deployer wallet today, and our transfer
-script covered only the registry and the module. We have fixed the script: it now transfers
-**all four contracts** in one run (`script/4-TransferPartnerOwnership.s.sol`).
+The test stack you reviewed was assembled from our retail onboarding, so it carried retail
+defaults. It is retired. You get a fresh deployment with new addresses.
 
-Mechanics, per contract:
+| | Test setup you reviewed | Your deployment |
+|---|---|---|
+| Registry, module, adapter, beacon owner | One Zyfai deployer key | 2-of-2 Safe (Zyfai + you), on all four contracts |
+| Executors on your account | GuardedExec + IntentExecutor | **GuardedExec only** (your module) |
+| Validators on your account | Owner validator + SmartSessions + Emissary | **Owner validator + SmartSessions only**. No Emissary. |
+| Agent authority | Emissary intent session (ERC-1271 signing) | **One SmartSessions session that can only call `executeGuardedBatch` on your module**. No message signing. |
+| Execution path | Rhinestone intents | ERC-4337 UserOperation → SmartSessions → your module → your registry |
+| Allowlist | Clearstar + staged Makina entries | **Only the IPOR vaults you designate** |
+| Adapter code | Earlier release | Current audited release (see point 8) |
 
-- **Registry, module, adapter** are `Ownable2Step`: we initiate, ownership only moves when
-  your Safe calls `acceptOwnership()`. No transfer can land at a wrong address.
-- **The beacon** is a plain `Ownable` (as you noted): its transfer is one-step and effective
-  immediately at broadcast. The script asserts, before broadcasting, that the beacon is really
-  the one behind the adapter proxy (EIP-1967 beacon slot) and that the deployer owns all four.
+## 2. How the deployment will go
 
-We will run the transfer to the Safe address you give us as soon as you confirm it.
+1. **2-of-2 Safe.** We create it together on Base with owners = [Zyfai signer, your signer]
+   and threshold 2. You check `getOwners()` and `getThreshold()` before anything else.
+2. **Deploy and configure.** We deploy your TargetRegistry, GuardedExec module, Adapter and
+   Adapter beacon, then configure only the agreed IPOR vaults (section 4) on the Adapter and
+   the registry.
+3. **Ownership transfer to the Safe** for all four contracts. Registry, module and Adapter use
+   `Ownable2Step`, so ownership only moves when the Safe calls `acceptOwnership()`, which
+   needs both signatures. The beacon is a plain `Ownable` and moves in one step. Our script
+   checks, before broadcasting, that it is the beacon actually behind your Adapter (via the
+   EIP-1967 slot).
+4. **You verify the infrastructure** (checklist in section 5) and then co-sign the three
+   `acceptOwnership()` calls.
+5. **Account deployment.** Your smart account is deployed by a single batch signed by **your**
+   owner key. We send you the exact batch to review before you sign it. It contains:
+   - Install the SmartSessions validator `0x00000000008bDABA73cD9815d79069c247Eb4bDA`.
+   - Install your GuardedExec module as the only executor.
+   - Enable the single agent session described in point 7. It is enabled inside the
+     deployment batch, so it is live and readable on-chain before you fund.
+   - Disable the account's ERC-7484 module-attestation check. Rhinestone has retired the
+     attester these accounts were created with, so installing any non-attested module (your
+     module included) would otherwise revert. Module installs remain gated by your owner
+     signature.
+6. **You verify the account** (section 5), then fund it.
 
-**Verify on-chain:** `owner()` and `pendingOwner()` on registry, module and adapter;
-`owner()` on the beacon. After your `acceptOwnership()` calls: `owner()` returns your Safe and
-`pendingOwner()` returns zero on all three 2-step contracts.
+---
 
-## 2. No unilateral Zyfai control
+## 3. Point-by-point answers
 
-Your observation is accurate. Between Sep 29 and Oct 11 the deployer key pointed the beacon at
-the current Adapter release (the same code line as our shared production adapter — the upgrade
-adds Makina support, see point 8) and staged Makina venue entries on this instance as part of
-our integration testing. The changes themselves are benign, but your conclusion stands: while
-the stack is pre-handover, a single Zyfai key can change your execution rails, and that is
-exactly what must end before you fund anything.
+### Point 1: Ownership of all four contracts
 
-**Commitment:** ownership of all four contracts moves out of single-key control before any
-funding — either directly to your Safe (point 1) or, for any interim period you want us to
-retain a role, to a 2-of-2 Safe whose signers are one Zyfai key and one key of yours. No
-retained standalone-key power, on any of the four.
+You were right that our transfer script covered only the registry and the module. It now
+transfers all four contracts (registry, module, Adapter and beacon) to the 2-of-2 Safe, as
+described in step 3 above.
 
-**Verify on-chain:** immediately before funding, re-read `implementation()` on the beacon,
-`owner()` on all four contracts, and `pendingOwner()` on the three 2-step contracts (must be
-zero — no transfer you did not initiate is in flight).
+**Verify on-chain:** `owner()` returns the Safe on all four contracts, and `pendingOwner()`
+returns `0x0` on the registry, module and Adapter.
 
-## 3. IntentExecutor
+### Point 2: No unilateral Zyfai control
 
-Confirmed: **the agent operates through the GuardedExec module alone.** The submission path
-for your accounts is:
+Your reading is correct. Between Sep 29 and Oct 11 our deployer key re-pointed the test beacon
+and admitted two Makina contracts, as part of our own integration testing (see point 8). The
+changes were harmless, but they show that one key could change your rails. That is the
+situation we are ending.
 
-1. The agent builds the batch of calls (adapter deposits/redeems, token approvals).
-2. It wraps them in a single `executeGuardedBatch` call on **your** module — the module
-   validates every inner call against **your** TargetRegistry on-chain and reverts on anything
-   not whitelisted.
-3. It signs an ERC-4337 UserOperation with its session key under the SmartSessions validator
-   (exact session scope in point 7) and submits it through a public bundler (Pimlico).
+After the handover, every power over your infrastructure requires both signatures: allowlist
+changes, pausing, Adapter venues, the module's UUPS upgrade, and the beacon upgrade. Neither
+Zyfai nor you can act alone on it. Your smart account is not part of this shared perimeter:
+it is owned by you only.
 
-No other executor is involved. The IntentExecutor and the Emissary you found on the test
-account belong to our retail cross-chain product (Rhinestone intents); the test account
-received them because it went through our standard retail onboarding. They are not required
-for the dedicated setup: in our backend, accounts without the emissary session never take the
-intent path — they are routed to the bundler path above unconditionally.
+**Verify on-chain, right before funding:** re-read `implementation()` on the beacon (it must
+be the reviewed release), the module's implementation slot, `owner()` on all four contracts,
+and `pendingOwner()` on the three 2-step contracts. Any later change shows up as a Safe
+transaction carrying both signatures.
 
-**Commitment:** at deployment, the executor list on your accounts is exactly
-`[your GuardedExecModule]`. We do not need the IntentExecutor, now or later. We acknowledge the
-two code issues you found in it (expired instructions, gas-refund recipient); with the module
-absent from your accounts, neither applies to you.
+### Point 3: IntentExecutor
 
-**Verify on-chain:** `getExecutorsPaginated` on the account returns only your module.
+**Confirmed: the agent operates through the GuardedExec module alone, and the IntentExecutor
+is not required.** The submission path for your account is:
 
-## 4. Emissary
+1. Our backend builds the batch: approvals plus Adapter `depositVaultForSelf` /
+   `redeemVaultForSelf` calls.
+2. It wraps the batch in one `executeGuardedBatch` call on your module. The module checks
+   every inner call against your registry and reverts on anything that is not allowlisted.
+3. It signs an ERC-4337 UserOperation under the session in point 7 and submits it through
+   the Pimlico bundler, with gas sponsored by a paymaster.
 
-What it is for: the Emissary validates our retail cross-chain intent flows — it produces the
-ERC-7739/ERC-1271 account signatures that the Rhinestone spoke pool consumes. The two keys you
-identified sign 2-of-2: one is a per-account agent session key held in Zyfai's signing
-service, the other is a co-signing key held inside an EigenCloud TEE, so that no single Zyfai
-service can produce a signature alone.
+Rhinestone intents are a retail cross-chain feature. Your account is Base-only, and our
+backend will send it exclusively through the path above. The two IntentExecutor code issues you found (expired
+instructions can still run, and the submitter picks the gas-refund recipient) do not apply to
+you, because the module will not be installed.
 
-Your SudoPolicy analysis is nonetheless correct: an emissary permission carries a full
-message-signing surface (ERC-1271), which is categorically more power than the agent needs on
-your accounts — and we also acknowledge that uninstalling the module does not clear a
-previously registered permission. It therefore simply does not belong on your accounts.
+**Verify on-chain:** the executor list on your account contains only your module.
 
-**Commitments:**
+### Point 4: Emissary
 
-- No Emissary installed on your accounts, at deployment or later.
-- Validators at deployment: exactly the owner validation controlled by your signers, plus the
-  SmartSessions validator carrying the single permission specified in point 7. Nothing else.
-- Module changes (install/uninstall of validators, executors, hooks) on a Safe7579 account
-  require the **account owner's** signature — your Safe. The agent session cannot alter the
-  module set: its only permitted action is `executeGuardedBatch` on your module, and your
-  registry does not whitelist the account itself as a target.
-- We share the exact account-deployment transaction with you for review before it runs.
+- **What it does.** The SmartSessionEmissary validates Rhinestone cross-chain intents for our
+  retail users. It produces the account signatures that the Rhinestone settlement contracts
+  consume.
+- **Who holds the keys.** The two signers you identified (`0x8018…b030` and `0x8076…9b81`) are
+  both Zyfai keys, and the session requires both signatures:
+  - a session key held by our backend signing service;
+  - a co-signing key held inside an EigenCloud TEE, so that no single Zyfai service can sign
+    alone.
+- **Why it doesn't belong on your account.** Your analysis is right. The Emissary permission
+  carries a full ERC-1271 signing surface, which is more power than the agent needs. A
+  registered permission also survives uninstalling the module. So the Emissary is never
+  installed on your account, and no Emissary permission is ever registered for it.
+- **Modules the agent needs.** These are the full list, with their roles:
 
-**Verify on-chain:** `getValidatorsPaginated` and `getExecutorsPaginated` on the account match
-the list above; the SmartSessions permission enumeration shows only the session in point 7.
+  | Module | Type | Role |
+  |---|---|---|
+  | OwnableValidator (owner = your address, threshold 1) | Validator | Your owner authority: deployment, module changes, session revocation |
+  | SmartSessions `0x00000000008bDABA73cD9815d79069c247Eb4bDA` | Validator | Carries the single agent session (point 7) |
+  | Your GuardedExec module | Executor | Executes the agent's batches, checking each call against your registry |
 
-## 5. Module checks recipients only on transfer/approve
+  No other validator, executor, hook or fallback handler is installed.
+- **Who can change modules.** On a Safe7579 account, installing or uninstalling modules
+  requires the owner's signature, which is yours. The agent session cannot do it: its only
+  allowed action is `executeGuardedBatch` on your module, and your registry does not allowlist
+  the account itself as a target.
 
-Correct, and it is the intended design. The module is a (target, selector) firewall with two
-special cases (ERC20 `transfer` recipients, `approve` spenders); it does not parse venue-call
-arguments. Argument-level protection lives one layer down, in the **Adapter**: every
-`*ForSelf` method hardcodes `msg.sender` — the smart account itself — as receiver/owner of
-funds. There is no recipient or `onBehalfOf` parameter to abuse, which is verifiable in the
-Adapter's published source on BaseScan.
+**Verify on-chain:** `getValidatorsPaginated` and `getExecutorsPaginated` on your account
+return exactly the table above.
 
-Your corollary is the operating rule of this system: **safety equals allowlist content.** A
-raw protocol endpoint with a free receiver argument must never be whitelisted — only the
-Adapter's selectors, token `approve`/`transfer`, and venue approvals. That is precisely why
-the registry moves to your ownership (point 1): the invariant is under your control, and every
-venue proposal from us will route through the Adapter.
+### Point 5: The module checks recipients only on `transfer` and `approve`
 
-## 6. Approvals: uncapped, and they outlast pausing/removal
+Correct, and this is by design. The module checks `(target, selector)` pairs and has only two
+special cases: ERC20 `transfer` recipients and `approve` spenders. It does not parse venue
+arguments.
 
-All three observations are correct, and we will not minimize them:
+Argument-level protection is in the Adapter. Every `*ForSelf` function hardcodes `msg.sender`,
+which is your account, as the receiver and owner of the funds. There is no recipient or
+`onBehalfOf` parameter that could be abused, and you can check this in the verified source.
 
-- The module never reads the `approve` amount. Some of our flows approve the exact operation
-  amount, others grant unlimited allowance — you should treat any granted allowance as
-  unbounded.
-- Removing a spender from the allowlist stops future calls and approvals but does not clear an
-  existing allowance.
-- `removeFromWhitelist` is `whenNotPaused`, so pausing the registry blocks removals too.
+That makes your operating rule correct: **safety equals allowlist content.** Your allowlist
+will contain only the following, and never a raw venue function with a free receiver
+argument:
 
-What actually bounds the risk: an allowance is only exploitable by the spender contract
-itself, and the only spenders ever whitelisted are your Adapter (whose code can only return
-funds to the owning account, and whose upgrade key — the beacon — becomes yours per point 1)
-and vault contracts you explicitly admitted. And the definitive kill switch sits above the
-module entirely: your Safe, as the account owner, can revoke any allowance directly
-(`approve(spender, 0)`) at any time, without touching module or registry.
+- the Adapter's vault selectors;
+- `approve` on the underlying tokens and vault shares, where the spender must be an
+  allowlisted target, meaning the Adapter;
+- `transfer` on the underlying tokens, where the registry limits recipients to the account
+  itself and its owners.
 
-If you want the pause semantics fixed (removals allowed while paused), we can patch and
-redeploy your registry before handover — the stack is unfunded, so a redeploy costs nothing
-but a new address. Your call.
+**Verify on-chain:** `whitelist(target, selector)` and `whitelistedTargets(target)` on the
+registry, `allowedVaults(vault)` on the Adapter, and the full history in the
+`TargetSelectorAdded`/`TargetSelectorRemoved` and `VaultSet` events.
 
-## 7. Agent authority on your account
+### Point 6: Approvals are uncapped and survive pausing and removal
 
-The exact session, verifiable on-chain after enablement:
+All three facts are correct: the module does not read `approve` amounts, a removal does not
+clear an existing allowance, and pausing the registry also blocks `removeFromWhitelist`. In
+practice, on your setup:
+
+- **How allowances are used.** On the IPOR paths, every batch approves only the Adapter, for
+  the exact amount of that operation, and the Adapter pulls exactly that amount in the same
+  batch. Between operations, the allowance from your account to the Adapter is zero.
+- **What this does and does not guarantee.** This is how our backend builds batches; the
+  module does not enforce it. You can check it at any time by reading
+  `allowance(yourAccount, adapter)` after each operation.
+- **The spender itself is safe.** The only spender is your Adapter, which can only send funds
+  back to your account, and whose code can only change through the 2-of-2 Safe.
+- **Pausing is not needed to remove.** A removal takes effect immediately without pausing.
+  To stop the agent instantly, you can act directly as account owner, independently of the
+  registry: revoke the session (point 7), uninstall the module, or call `approve(spender, 0)`.
+
+### Point 7: Agent authority on your account
+
+This is the exact session, enabled in the deployment batch:
 
 | Field | Value |
 |---|---|
-| Validator | SmartSessions (canonical deployment) |
-| Session signer | One per-account agent key held by Zyfai's signing service (address disclosed at deployment) |
-| Allowed actions | Exactly one: target = your GuardedExecModule, selector = `executeGuardedBatch` (`0x2fc52d90`) |
-| Action policy | SudoPolicy |
-| UserOp policy | SudoPolicy |
-| ERC-1271 / ERC-7739 surface | **None** — the session is userOp-only and cannot sign messages, so the permit / `transferWithAuthorization` drain path you described is closed |
-| Expiry | None by default; the session is revocable instantly and unilaterally by your Safe (`removeSession`, or uninstalling the validator). We can attach a time-bound policy if you require bounded validity. |
+| Validator | SmartSessions `0x00000000008bDABA73cD9815d79069c247Eb4bDA` |
+| Signers | 2-of-2: Zyfai backend session key + Zyfai EigenCloud TEE key (addresses disclosed in the deployment batch) |
+| Allowed actions | **One:** target = your GuardedExec module, selector = `executeGuardedBatch` (`0x2fc52d90`) |
+| Action and UserOp policy | SudoPolicy `0x0000003111cD8e92337C100F22B7A9dbf8DEE301` |
+| ERC-1271 / ERC-7739 | **None.** The session cannot sign messages, so the permit / `transferWithAuthorization` path you described does not exist. |
+| Paymaster | Allowed, for sponsored gas |
+| Expiry | None. You can revoke it at any time with your owner key (`removeSession` on SmartSessions, or by uninstalling the validator). |
 
-On the SudoPolicy choice: it is deliberate. The restriction that matters is not expressible at
-the policy layer — it is enforced by the module and your registry on every inner call of every
-batch. The session merely says "the agent may knock on this one door"; the door decides.
+We use SudoPolicy on purpose. The session only says that the agent may call this one function.
+The restriction is applied by your module and your registry, on every inner call of every
+batch.
 
-Your note on `callPolicy` treating empty policy replies as approval is acknowledged; we use no
-external call policies — only SudoPolicy — so nothing load-bearing sits on that code path.
+On the empty-reply behaviour of `callPolicy` that you flagged: we use no call policies, only
+SudoPolicy, so that code path is never reached.
 
-On the test account: standard SmartSessions holds no permission there because that account's
-authority ran through the Emissary + IntentExecutor (retail intent path). Your deployment uses
-the SmartSessions path above instead, with neither of those modules installed.
+The standard SmartSessions on the test account held no permission because that account's
+authority went through the Emissary and the IntentExecutor. Your account works the other way
+round, as described above.
 
-## 8. Makina
+**Verify on-chain:** the session is readable on SmartSessions for your account from the
+deployment block onward: its permission, actions and policies.
 
-Why it appeared: Makina is our next protocol integration (a USDC vault with queued
-redemptions). The beacon upgrade you observed is the Adapter release that carries it
-(`depositMakinaForSelf` / `requestMakinaRedeemForSelf`), and admitting the DirectDepositor and
-AsyncRedeemer on this instance was part of our integration testing. Doing that on an instance
-under your review, without notice, was a mistake on our side — fair criticism, and it is
-exactly the class of change that stops being possible once point 1 is executed.
+### Point 8: Makina
 
-On the exit terms: your reading matches ours — redemptions finalize after a delay, a single
-operational key performs finalization, and the delay parameter is changeable by their multisig
-without a timelock. Whether that risk profile is acceptable for your funds is your decision,
-not ours.
+- **Why it appeared.** Makina is one of our integrations. The beacon change you observed was
+  the Adapter release that supports it, and admitting the DirectDepositor and AsyncRedeemer
+  was integration testing on our test instance. It should not have happened on an instance
+  under your review. That is a fair criticism.
+- **Your deployment.** It runs the current audited Adapter release, which includes the code
+  for Makina and Morpho markets (including borrowing). Having the code is not the same as
+  having permission: **no Makina contract and no Morpho market is admitted**. Those functions
+  revert on anything that is not allowlisted, and borrowing is inert without an allowed
+  market.
+- **Makina exit terms.** We agree with your reading of the 3-day finalization delay, the
+  single finalizing key and the absence of a timelock on the delay. Admitting it, or any other
+  venue, is your decision. Since it requires both signatures on the Safe, it cannot happen
+  without you.
 
-**Commitments:**
-
-- The Makina entries staged during testing are removed before handover unless you tell us to
-  keep them; your allowlist starts exactly where you want it.
-- Every future venue proposal from us arrives as a written risk note plus the exact allowlist
-  transaction, to be executed by your Safe — or not at all. We never admit a venue to your
-  stack.
+**Verify on-chain:** `allowedVaults()` and `allowedMarkets()` on the Adapter, and the absence
+of `VaultSet` / `MorphoMarketSet` events for anything other than your IPOR vaults.
 
 ---
 
-## Handover sequence
+## 4. What we need from you
 
-1. You send us your 2-of-2 Safe address.
-2. We clean the test allowlist to the agreed venue set (point 8).
-3. We run the four-contract transfer (point 1); the beacon moves immediately, you
-   `acceptOwnership()` on registry, module and adapter.
-4. You verify on-chain: `owner()` on all four = your Safe; `pendingOwner()` = zero;
-   `implementation()` on the beacon is the reviewed Adapter release; `registry()` on the
-   module = your registry.
-5. We share the account-deployment transaction for review; after your sign-off, accounts are
-   deployed with executors = [your module], validators = [owner validation, SmartSessions],
-   and the single session of point 7. No Emissary, no IntentExecutor.
-6. You fund.
+1. **The IPOR vaults to allowlist**: their addresses on Base, plus for each one:
+   - **Deposits:** are they permissioned? The Adapter is the contract that calls `deposit()`,
+     so if the vault restricts depositors, its role must be granted to the Adapter address we
+     will send you.
+   - **Shares:** are they transferable (public vault) or locked (private vault)? Exits pull
+     the shares through the Adapter.
+   - **Withdrawals:** are they instant, or do they go through a WithdrawManager (request,
+     then claim)? Request-based vaults need one extra Adapter selector. If so, we will list it
+     explicitly before deployment.
+2. **Your signer address** for the 2-of-2 Safe.
+3. **The owner address of your smart account**, which is also the address you will sign in
+   with. Tell us whether it is an EOA or a Safe. This is the address we enable for your
+   dedicated setup on our side.
+
+## 5. Verification checklist before funding
+
+- Safe: `getOwners()` = [Zyfai signer, your signer] and `getThreshold()` = 2.
+- Registry, module, Adapter and beacon: `owner()` = Safe, and `pendingOwner()` = `0x0` on the
+  three 2-step contracts.
+- Beacon `implementation()` = the reviewed Adapter release. Module `registry()` = your
+  registry.
+- Registry allowlist and Adapter `allowedVaults` = exactly the agreed IPOR vaults (point 5).
+  No Makina, no Morpho market.
+- Account: executors = [your module]; validators = [OwnableValidator, SmartSessions]; one
+  session, as specified in point 7. No Emissary, no IntentExecutor.
