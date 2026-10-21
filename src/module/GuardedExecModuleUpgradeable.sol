@@ -8,6 +8,8 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ERC7579ExecutorBase } from "modulekit/Modules.sol";
 import { Execution } from "modulekit/accounts/erc7579/lib/ExecutionLib.sol";
 import { TargetRegistry } from "../registry/TargetRegistry.sol";
+import { IAaveV4Spoke } from "../interfaces/IAaveV4Spoke.sol";
+import { IIporWithdrawManager } from "../interfaces/IIporWithdrawManager.sol";
 
 /**
  * @title GuardedExecModuleUpgradeable
@@ -42,6 +44,72 @@ contract GuardedExecModuleUpgradeable is
     bytes4 private constant APPROVE_SELECTOR = IERC20.approve.selector;
 
     /**
+     * @notice Selector of `setAuthorization(address,bool)` (Morpho Blue-style operator grant)
+     * @dev A call to this selector makes the smart account grant `authorized` protocol-wide
+     *      withdraw/borrow rights over its positions (e.g. Morpho Blue `setAuthorization`).
+     *      The grantee argument must be ADAPTER, so a session key can never authorize any
+     *      other address.
+     */
+    bytes4 private constant SET_AUTHORIZATION_SELECTOR = 0xeecea000;
+
+    /**
+     * @notice Selector of `setOperator(address,bool)` (ERC-7540 operator grant, e.g. SuperVault)
+     * @dev Same calldata layout and grantee rule as SET_AUTHORIZATION_SELECTOR: an operator can
+     *      act on the smart account's vault requests, so it must be ADAPTER.
+     */
+    bytes4 private constant SET_OPERATOR_SELECTOR = 0x558a7297;
+
+    /**
+     * @notice Selector of Aave v4 Spoke `borrow(uint256,uint256,address)`
+     * @dev Of the Spoke position calls (supply, withdraw, borrow, repay, setUsingAsCollateral),
+     *      this one, SPOKE_WITHDRAW_SELECTOR and SPOKE_SET_COLLATERAL_SELECTOR are the only ones
+     *      that can lower the caller's health factor (`supply` and `repay` only raise it).
+     *      The Spoke itself only enforces health factor >= 1, so without
+     *      a margin a session key could borrow to the edge and liquidate the smart account from
+     *      its own EOA (permissionless `liquidationCall`, liquidator takes collateral + bonus).
+     */
+    bytes4 private constant SPOKE_BORROW_SELECTOR = 0xd6bda0c0;
+
+    /// @notice Selector of Aave v4 Spoke `withdraw(uint256,uint256,address)`
+    bytes4 private constant SPOKE_WITHDRAW_SELECTOR = 0x0ad58d2f;
+
+    /// @notice Selector of Aave v4 Spoke `setUsingAsCollateral(uint256,bool,address)`
+    bytes4 private constant SPOKE_SET_COLLATERAL_SELECTOR = 0x9e35c533;
+
+    /**
+     * @notice Minimum Aave v4 Spoke health factor (WAD) a batch may leave the smart account at
+     * @dev 1.5 instead of the Spoke's 1.0 liquidation threshold, so a session key cannot park the
+     *      position next to liquidation; collateral must drop by a third before liquidation,
+     *      which leaves room for gap moves on volatile collateral such as tokenized equities.
+     */
+    uint256 private constant MIN_HEALTH_FACTOR = 1.5e18;
+
+    /**
+     * @notice Selector of IPOR Fusion WithdrawManager `requestShares(uint256)`
+     * @dev The WithdrawManager takes `shares * getRequestFee() / 1e18` from the caller's vault
+     *      shares, with no cap against the caller's balance and no approval. Shares are not
+     *      escrowed and each request overwrites the last, so with a non-zero fee a session key
+     *      could burn the position, in one oversized request or by repeating requests. While
+     *      the fee is non-zero, a request must not exceed the smart account's vault shares,
+     *      must not replace a request whose withdraw window is still open, must be the only
+     *      one to that WithdrawManager in the batch, the fee must be at most MAX_REQUEST_FEE
+     *      and the withdraw window at least MIN_WITHDRAW_WINDOW. A session key can then cost
+     *      at most MAX_REQUEST_FEE of the position per vault per MIN_WITHDRAW_WINDOW.
+     *      Any target whitelisted with this selector must be an IPOR WithdrawManager: on any
+     *      other contract the `getRequestFee` call reverts the batch.
+     */
+    bytes4 private constant REQUEST_SHARES_SELECTOR = 0xfc415e9c;
+
+    /// @notice Highest IPOR request fee (WAD) a batch may pay; observed fees are 0 to 0.2%
+    uint256 private constant MAX_REQUEST_FEE = 0.01e18;
+
+    /// @notice Shortest IPOR withdraw window accepted while the request fee is non-zero
+    uint256 private constant MIN_WITHDRAW_WINDOW = 1 days;
+
+    /// @notice `requestShares(uint256)` calldata length: 4 (selector) + 32 (shares)
+    uint256 private constant REQUEST_SHARES_LENGTH = 36;
+
+    /**
      * @notice Minimum calldata length required to extract function selector
      * @dev Function selector is 4 bytes, so calldata must be at least 4 bytes
      */
@@ -52,6 +120,18 @@ contract GuardedExecModuleUpgradeable is
      * @dev Standard ERC20 transfer/approve: 4 bytes (selector) + 32 bytes (address) + 32 bytes (amount) = 68 bytes
      */
     uint256 private constant MIN_TRANSFER_LENGTH = 68;
+
+    /*//////////////////////////////////////////////////////////////
+                               IMMUTABLES
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice The only address a session key may grant via setAuthorization / setOperator
+     * @dev Lives in the implementation bytecode, not proxy storage: changing it requires
+     *      deploying a new implementation and upgrading the proxy.
+     */
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    address public immutable ADAPTER;
 
     /*//////////////////////////////////////////////////////////////
                                STORAGE
@@ -110,6 +190,9 @@ contract GuardedExecModuleUpgradeable is
     /// @notice Thrown when registry address is zero
     error InvalidRegistry();
 
+    /// @notice Thrown when the Adapter address passed to the constructor is zero
+    error InvalidAdapter();
+
     /// @notice Thrown when batch operation arrays are empty
     error EmptyBatch();
 
@@ -131,6 +214,44 @@ contract GuardedExecModuleUpgradeable is
     /// @param spender The unauthorized spender address
     error UnauthorizedERC20Approve(address token, address spender);
 
+    /// @notice Thrown when setAuthorization or setOperator grants an unauthorized address
+    /// @param target The protocol contract address (e.g. Morpho Blue singleton, SuperVault)
+    /// @param authorized The unauthorized grantee address
+    error UnauthorizedAuthorizationGrant(address target, address authorized);
+
+    /// @notice Thrown when a batch leaves the smart account below MIN_HEALTH_FACTOR on a Spoke
+    /// @param spoke The Aave v4 Spoke whose health factor check failed
+    /// @param healthFactor The smart account's health factor on that Spoke after the batch (WAD)
+    error HealthFactorTooLow(address spoke, uint256 healthFactor);
+
+    /// @notice Thrown when requestShares targets a WithdrawManager whose request fee exceeds
+    ///         MAX_REQUEST_FEE
+    /// @param withdrawManager The IPOR Fusion WithdrawManager called with requestShares
+    /// @param fee The WithdrawManager's current request fee (WAD)
+    error RequestFeeTooHigh(address withdrawManager, uint256 fee);
+
+    /// @notice Thrown when a fee-charging request asks for more shares than the smart account holds
+    /// @param withdrawManager The IPOR Fusion WithdrawManager called with requestShares
+    /// @param shares The requested shares
+    /// @param balance The smart account's vault shares before the batch
+    error RequestExceedsBalance(address withdrawManager, uint256 shares, uint256 balance);
+
+    /// @notice Thrown when a fee-charging request would replace a request whose withdraw window
+    ///         is still open
+    /// @param withdrawManager The IPOR Fusion WithdrawManager called with requestShares
+    /// @param endWithdrawWindowTimestamp End of the pending request's withdraw window
+    error RequestAlreadyPending(address withdrawManager, uint256 endWithdrawWindowTimestamp);
+
+    /// @notice Thrown when a fee-charging WithdrawManager's withdraw window is below
+    ///         MIN_WITHDRAW_WINDOW
+    /// @param withdrawManager The IPOR Fusion WithdrawManager called with requestShares
+    /// @param withdrawWindow The WithdrawManager's current withdraw window (seconds)
+    error WithdrawWindowTooShort(address withdrawManager, uint256 withdrawWindow);
+
+    /// @notice Thrown when a batch sends more than one fee-charging request to a WithdrawManager
+    /// @param withdrawManager The IPOR Fusion WithdrawManager called with requestShares
+    error DuplicateRequest(address withdrawManager);
+
     /// @notice Thrown when calldata is invalid (too short or malformed)
     error InvalidCalldata();
 
@@ -142,9 +263,12 @@ contract GuardedExecModuleUpgradeable is
      * @notice Constructor for implementation contract
      * @dev Disables initialization in implementation contract to prevent direct use.
      *      Only proxy instances should be initialized via initialize().
+     * @param _adapter The Zyfai Adapter proxy for this deployment (the only allowed grantee)
      */
     /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
+    constructor(address _adapter) {
+        if (_adapter == address(0)) revert InvalidAdapter();
+        ADAPTER = _adapter;
         _disableInitializers();
     }
 
@@ -188,7 +312,7 @@ contract GuardedExecModuleUpgradeable is
      * @return Version string
      */
     function version() external pure returns (string memory) {
-        return "2.0.0";
+        return "2.1.0";
     }
 
     /**
@@ -263,6 +387,15 @@ contract GuardedExecModuleUpgradeable is
      *      Executions maintain smart account context (msg.sender = smart account).
      *      All validations occur before execution (checks-effects-interactions pattern).
      *      The smart account uses its own balance to forward ETH to target contracts.
+     *      After execution, every target called with an Aave v4 Spoke borrow, withdraw or
+     *      setUsingAsCollateral selector must report a health factor >= MIN_HEALTH_FACTOR for the
+     *      smart account, otherwise the whole batch reverts. The check runs once per Spoke at the
+     *      end of the batch, so intermediate states (e.g. borrow then repay) are allowed.
+     *      Any target whitelisted with one of those selectors must be an Aave v4 Spoke: on any
+     *      other contract the `getUserAccountData` call reverts the batch. Never whitelist these
+     *      Spoke selectors: `setUserPositionManager`, `setUserPositionManagersWithSig` and
+     *      `multicall` route around this check, `updateUserDynamicConfig` can lower the health
+     *      factor unchecked, and `liquidationCall` spends the smart account's funds on others.
      * @param executions Array of Execution structs containing target, value, and callData
      */
     function executeGuardedBatch(
@@ -276,6 +409,10 @@ contract GuardedExecModuleUpgradeable is
         
         address[] memory targets = new address[](length);
         bytes4[] memory selectors = new bytes4[](length);
+        address[] memory spokes = new address[](length);
+        uint256 spokeCount;
+        address[] memory withdrawManagers = new address[](length);
+        uint256 withdrawManagerCount;
         GuardedExecModuleStorage storage s = _getGuardedExecModuleStorage();
         TargetRegistry reg = s.registry;
         
@@ -306,6 +443,19 @@ contract GuardedExecModuleUpgradeable is
                 _validateERC20Transfer(target, callData, callDataLength, reg);
             } else if (selector == APPROVE_SELECTOR) {
                 _validateERC20Approve(target, callData, callDataLength, reg);
+            } else if (
+                selector == SET_AUTHORIZATION_SELECTOR || selector == SET_OPERATOR_SELECTOR
+            ) {
+                _validateAuthorizationGrant(target, callData, callDataLength);
+            } else if (
+                selector == SPOKE_BORROW_SELECTOR || selector == SPOKE_WITHDRAW_SELECTOR
+                    || selector == SPOKE_SET_COLLATERAL_SELECTOR
+            ) {
+                spokeCount = _recordSpoke(spokes, spokeCount, target);
+            } else if (selector == REQUEST_SHARES_SELECTOR) {
+                withdrawManagerCount = _validateRequestShares(
+                    withdrawManagers, withdrawManagerCount, target, callData, callDataLength
+                );
             }
             
             unchecked {
@@ -317,6 +467,8 @@ contract GuardedExecModuleUpgradeable is
         // The smart account uses its own balance to forward ETH to target contracts
         // based on the Execution.value fields in the executions array
         _execute(executions);
+
+        _validateSpokeHealthFactors(spokes, spokeCount);
 
         emit GuardedBatchExecuted(msg.sender, targets, selectors, block.timestamp);
     }
@@ -406,6 +558,143 @@ contract GuardedExecModuleUpgradeable is
         // Using auto-generated getter from public mapping to avoid duplicate bytecode
         if (!reg.whitelistedTargets(spender)) {
             revert UnauthorizedERC20Approve(token, spender);
+        }
+    }
+
+    /**
+     * @notice Validate a protocol authorization grant (`setAuthorization(address,bool)` or
+     *         `setOperator(address,bool)`)
+     * @dev A grant like Morpho Blue `setAuthorization` gives the grantee global withdraw and
+     *      borrow rights over the smart account's positions, bypassing every receiver binding
+     *      downstream. The grantee must therefore be ADAPTER, which pins the receiver to the
+     *      smart account. Revokes (bool = false) are not restricted.
+     * @param target The protocol contract address (e.g. Morpho Blue singleton, SuperVault)
+     * @param callData The encoded (address grantee, bool approved) call data
+     * @param callDataLength The length of callData (cached to avoid repeated calldata loads)
+     */
+    function _validateAuthorizationGrant(
+        address target,
+        bytes calldata callData,
+        uint256 callDataLength
+    )
+        internal
+        view
+    {
+        // Grant calls must be exactly 68 bytes: 4 (selector) + 32 (grantee) + 32 (bool)
+        if (callDataLength != MIN_TRANSFER_LENGTH) revert InvalidCalldata();
+
+        // A revoke only removes rights, so it is allowed for any grantee (including one granted
+        // under an earlier rule). Only an exact-zero bool word counts as a revoke.
+        if (bytes32(callData[36:68]) == bytes32(0)) return;
+
+        // Extract grantee address from calldata (bytes 16-35, ignoring 12-byte padding)
+        address authorized = address(bytes20(callData[16:36]));
+
+        if (authorized != ADAPTER) revert UnauthorizedAuthorizationGrant(target, authorized);
+    }
+
+    /**
+     * @notice Append a Spoke to the list checked after execution, unless already present
+     * @dev Linear scan; batches are small.
+     * @param spokes The Spokes recorded so far (sized to the batch length)
+     * @param count The number of Spokes recorded so far
+     * @param spoke The Spoke targeted by the current execution
+     * @return The updated number of recorded Spokes
+     */
+    function _recordSpoke(
+        address[] memory spokes,
+        uint256 count,
+        address spoke
+    )
+        internal
+        pure
+        returns (uint256)
+    {
+        for (uint256 i = 0; i < count;) {
+            if (spokes[i] == spoke) return count;
+            unchecked {
+                ++i;
+            }
+        }
+        spokes[count] = spoke;
+        unchecked {
+            return count + 1;
+        }
+    }
+
+    /**
+     * @notice Require the smart account's health factor on each recorded Spoke to be at least
+     *         MIN_HEALTH_FACTOR
+     * @dev Runs after execution. msg.sender is the smart account, and the Spoke binds these calls
+     *      to its position: `onBehalfOf` must be the caller unless the caller is a
+     *      governance-activated position manager approved by `onBehalfOf`.
+     * @param spokes The Spokes touched by health-factor-lowering calls in this batch
+     * @param count The number of recorded Spokes
+     */
+    function _validateSpokeHealthFactors(address[] memory spokes, uint256 count) internal view {
+        for (uint256 i = 0; i < count;) {
+            uint256 healthFactor =
+                IAaveV4Spoke(spokes[i]).getUserAccountData(msg.sender).healthFactor;
+            if (healthFactor < MIN_HEALTH_FACTOR) {
+                revert HealthFactorTooLow(spokes[i], healthFactor);
+            }
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    /**
+     * @notice Bound an IPOR WithdrawManager `requestShares(uint256)` call while its fee is non-zero
+     * @dev Runs before execution, so balance and pending request are read before the batch; the
+     *      one-request-per-WithdrawManager rule stops a second call from reusing that state.
+     *      The WithdrawManager keys requests on its caller, here msg.sender (the smart account).
+     * @param withdrawManagers The fee-charging WithdrawManagers requested so far in this batch
+     * @param count The number of recorded WithdrawManagers
+     * @param withdrawManager The WithdrawManager targeted by the current execution
+     * @param callData The encoded requestShares(uint256 shares) call data
+     * @param callDataLength The length of callData (cached to avoid repeated calldata loads)
+     * @return The updated number of recorded WithdrawManagers
+     */
+    function _validateRequestShares(
+        address[] memory withdrawManagers,
+        uint256 count,
+        address withdrawManager,
+        bytes calldata callData,
+        uint256 callDataLength
+    )
+        internal
+        view
+        returns (uint256)
+    {
+        if (callDataLength != REQUEST_SHARES_LENGTH) revert InvalidCalldata();
+
+        IIporWithdrawManager manager = IIporWithdrawManager(withdrawManager);
+        uint256 fee = manager.getRequestFee();
+        if (fee == 0) return count;
+        if (fee > MAX_REQUEST_FEE) revert RequestFeeTooHigh(withdrawManager, fee);
+
+        uint256 shares = uint256(bytes32(callData[4:36]));
+        uint256 balance = IERC20(manager.getPlasmaVaultAddress()).balanceOf(msg.sender);
+        if (shares > balance) revert RequestExceedsBalance(withdrawManager, shares, balance);
+
+        IIporWithdrawManager.WithdrawRequestInfo memory request = manager.requestInfo(msg.sender);
+        if (request.withdrawWindowInSeconds < MIN_WITHDRAW_WINDOW) {
+            revert WithdrawWindowTooShort(withdrawManager, request.withdrawWindowInSeconds);
+        }
+        if (request.shares != 0 && block.timestamp <= request.endWithdrawWindowTimestamp) {
+            revert RequestAlreadyPending(withdrawManager, request.endWithdrawWindowTimestamp);
+        }
+
+        for (uint256 i = 0; i < count;) {
+            if (withdrawManagers[i] == withdrawManager) revert DuplicateRequest(withdrawManager);
+            unchecked {
+                ++i;
+            }
+        }
+        withdrawManagers[count] = withdrawManager;
+        unchecked {
+            return count + 1;
         }
     }
 }

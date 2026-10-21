@@ -11,6 +11,11 @@ import { UUPSUpgradeable } from
     "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { MockDeFiPool } from "test/mocks/MockDeFiPool.sol";
 import { MockERC20 } from "test/mocks/MockERC20.sol";
+import { MockAaveV4Spoke } from "test/mocks/MockAaveV4Spoke.sol";
+import { MockIporWithdrawManager, MockPlasmaVaultShares } from
+    "test/mocks/MockIporWithdrawManager.sol";
+import { MockMorphoBlue } from "test/mocks/MockMorphoBlue.sol";
+import { MockOperatorVault } from "test/mocks/MockOperatorVault.sol";
 import { MockSafeWallet } from "test/mocks/MockSafeWallet.sol";
 import { TestTargetRegistryWithMockSafe } from "test/mocks/TestTargetRegistryWithMockSafe.sol";
 import { TargetRegistry } from "src/registry/TargetRegistry.sol";
@@ -64,6 +69,9 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     bytes4 internal constant SWAP_SELECTOR = MockDeFiPool.swap.selector;
     bytes4 internal constant TRANSFER_SELECTOR = IERC20.transfer.selector;
     bytes4 internal constant APPROVE_SELECTOR = IERC20.approve.selector;
+
+    // Production Zyfai Adapter proxy (same address on Ethereum, Base, Arbitrum)
+    address internal constant ADAPTER = 0xaffD3c3cD06cf499deddf78b26868018A93f2C31;
 
     /**
      * @notice Helper function to convert arrays to Execution[] for testing
@@ -138,7 +146,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         vm.stopPrank();
         
         // Deploy UPGRADEABLE module (implementation + proxy)
-        implementation = new GuardedExecModuleUpgradeable();
+        implementation = new GuardedExecModuleUpgradeable(ADAPTER);
         vm.label(address(implementation), "GuardedExecModuleUpgradeable_Implementation");
         
         // Encode initialization data
@@ -320,10 +328,12 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         address moduleRegistry = address(guardedModule.registry());
         
         assertEq(moduleRegistry, address(registry), "Registry should match");
+
+        assertEq(guardedModule.ADAPTER(), ADAPTER, "Adapter is read from the implementation");
         
         // Check version
         string memory version = guardedModule.version();
-        assertEq(version, "2.0.0", "Version should be 2.0.0");
+        assertEq(version, "2.1.0", "Version should be 2.1.0");
         
         // Check name
         string memory name = guardedModule.name();
@@ -1207,7 +1217,7 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
      * @notice Test: Cannot initialize with zero registry address
      */
     function test_CannotInitializeWithZeroRegistry() public {
-        GuardedExecModuleUpgradeable newImpl = new GuardedExecModuleUpgradeable();
+        GuardedExecModuleUpgradeable newImpl = new GuardedExecModuleUpgradeable(ADAPTER);
 
         vm.expectRevert(GuardedExecModuleUpgradeable.InvalidRegistry.selector);
         new ERC1967Proxy(
@@ -1217,6 +1227,919 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
                 address(0), // Zero registry address
                 moduleOwner
             )
+        );
+    }
+
+    /**
+     * @notice Test: Cannot deploy an implementation with a zero Adapter address
+     */
+    function test_CannotDeployImplementationWithZeroAdapter() public {
+        vm.expectRevert(GuardedExecModuleUpgradeable.InvalidAdapter.selector);
+        new GuardedExecModuleUpgradeable(address(0));
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                 SETAUTHORIZATION GRANT VALIDATION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    bytes4 internal constant SET_AUTHORIZATION_SELECTOR = MockMorphoBlue.setAuthorization.selector;
+
+    /**
+     * @notice Deploy a mock Morpho Blue singleton and whitelist (morpho, setAuthorization)
+     */
+    function _deployAndWhitelistMorpho() internal returns (MockMorphoBlue morpho) {
+        morpho = new MockMorphoBlue();
+        vm.label(address(morpho), "MockMorphoBlue");
+
+        vm.startPrank(registryOwner);
+        address[] memory whitelistTargets = new address[](1);
+        whitelistTargets[0] = address(morpho);
+        bytes4[] memory whitelistSelectors = new bytes4[](1);
+        whitelistSelectors[0] = SET_AUTHORIZATION_SELECTOR;
+        registry.addToWhitelist(whitelistTargets, whitelistSelectors);
+        vm.stopPrank();
+    }
+
+    /**
+     * @notice Test: setAuthorization granting the Adapter succeeds
+     */
+    function test_SetAuthorizationGrantToAdapterSucceeds() public {
+        MockMorphoBlue morpho = _deployAndWhitelistMorpho();
+
+        address[] memory targets = new address[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
+        targets[0] = address(morpho);
+        calldatas[0] = abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, ADAPTER, true);
+        values[0] = 0;
+
+        Execution[] memory executions = _toExecutions(targets, calldatas, values);
+
+        instance.exec({
+            target: address(guardedModule),
+            value: 0,
+            callData: abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.executeGuardedBatch.selector, executions
+            )
+        });
+
+        assertTrue(
+            morpho.isAuthorized(smartAccount, ADAPTER),
+            "Smart account should have authorized the Adapter"
+        );
+    }
+
+    /**
+     * @notice Test: setAuthorization granting a whitelisted target other than the Adapter reverts
+     * @dev A whitelisted token has no receiver binding; authorizing it would let anyone who can
+     *      make it call Morpho act on the smart account's positions.
+     */
+    function test_SetAuthorizationGrantToWhitelistedTokenReverts() public {
+        MockMorphoBlue morpho = _deployAndWhitelistMorpho();
+        address grantee = address(usdcToken);
+        assertTrue(registry.whitelistedTargets(grantee), "grantee is a whitelisted target");
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.UnauthorizedAuthorizationGrant.selector,
+                address(morpho),
+                grantee
+            )
+        );
+        guardedModule.executeGuardedBatch(
+            _singleExecution(
+                address(morpho), abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, grantee, true)
+            )
+        );
+    }
+
+    /**
+     * @notice Test: setAuthorization granting an arbitrary address reverts
+     * @dev This is the drain path: a compromised session key tries to authorize its own EOA
+     *      as global Morpho operator for the Safe. The module must block it.
+     */
+    function test_SetAuthorizationGrantToArbitraryAddressReverts() public {
+        MockMorphoBlue morpho = _deployAndWhitelistMorpho();
+        address attacker = makeAddr("attacker");
+
+        address[] memory targets = new address[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
+        targets[0] = address(morpho);
+        calldatas[0] = abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, attacker, true);
+        values[0] = 0;
+
+        Execution[] memory executions = _toExecutions(targets, calldatas, values);
+
+        instance.expect4337Revert(
+            GuardedExecModuleUpgradeable.UnauthorizedAuthorizationGrant.selector
+        );
+        instance.exec({
+            target: address(guardedModule),
+            value: 0,
+            callData: abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.executeGuardedBatch.selector, executions
+            )
+        });
+
+        assertFalse(
+            morpho.isAuthorized(smartAccount, attacker),
+            "Attacker must never become authorized"
+        );
+    }
+
+    /**
+     * @notice Test: granting then revoking (bool = false) the Adapter passes validation
+     */
+    function test_SetAuthorizationRevokeAdapterSucceeds() public {
+        MockMorphoBlue morpho = _deployAndWhitelistMorpho();
+        address adapter = ADAPTER;
+
+        address[] memory targets = new address[](2);
+        bytes[] memory calldatas = new bytes[](2);
+        uint256[] memory values = new uint256[](2);
+        targets[0] = address(morpho);
+        calldatas[0] = abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, adapter, true);
+        values[0] = 0;
+        targets[1] = address(morpho);
+        calldatas[1] = abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, adapter, false);
+        values[1] = 0;
+
+        Execution[] memory executions = _toExecutions(targets, calldatas, values);
+
+        instance.exec({
+            target: address(guardedModule),
+            value: 0,
+            callData: abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.executeGuardedBatch.selector, executions
+            )
+        });
+
+        assertFalse(
+            morpho.isAuthorized(smartAccount, adapter), "Authorization should have been revoked"
+        );
+    }
+
+    /**
+     * @notice Test: setAuthorization without a registry whitelist entry reverts
+     */
+    function test_SetAuthorizationNotWhitelistedSelectorReverts() public {
+        MockMorphoBlue morpho = new MockMorphoBlue(); // NOT whitelisted
+
+        address[] memory targets = new address[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
+        targets[0] = address(morpho);
+        calldatas[0] =
+            abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, address(uniswapPool), true);
+        values[0] = 0;
+
+        Execution[] memory executions = _toExecutions(targets, calldatas, values);
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.TargetSelectorNotWhitelisted.selector,
+                address(morpho),
+                SET_AUTHORIZATION_SELECTOR
+            )
+        );
+        guardedModule.executeGuardedBatch(executions);
+    }
+
+    /**
+     * @notice Test: malformed setAuthorization calldata (wrong length) reverts
+     */
+    function test_SetAuthorizationInvalidCalldataLengthReverts() public {
+        MockMorphoBlue morpho = _deployAndWhitelistMorpho();
+
+        address[] memory targets = new address[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
+        targets[0] = address(morpho);
+        // Only 36 bytes: 4 (selector) + 32 (address), missing the bool word
+        calldatas[0] = abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, address(uniswapPool));
+        values[0] = 0;
+
+        Execution[] memory executions = _toExecutions(targets, calldatas, values);
+
+        vm.prank(smartAccount);
+        vm.expectRevert(GuardedExecModuleUpgradeable.InvalidCalldata.selector);
+        guardedModule.executeGuardedBatch(executions);
+    }
+
+    /**
+     * @notice Fuzz: no grantee other than the Adapter can ever pass setAuthorization validation
+     */
+    function testFuzz_SetAuthorizationGrantOnlyAdapter(address grantee) public {
+        MockMorphoBlue morpho = _deployAndWhitelistMorpho();
+        vm.assume(grantee != ADAPTER);
+
+        address[] memory targets = new address[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        uint256[] memory values = new uint256[](1);
+        targets[0] = address(morpho);
+        calldatas[0] = abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, grantee, true);
+        values[0] = 0;
+
+        Execution[] memory executions = _toExecutions(targets, calldatas, values);
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.UnauthorizedAuthorizationGrant.selector,
+                address(morpho),
+                grantee
+            )
+        );
+        guardedModule.executeGuardedBatch(executions);
+    }
+
+    function _singleExecution(
+        address target,
+        bytes memory callData
+    )
+        internal
+        pure
+        returns (Execution[] memory executions)
+    {
+        executions = new Execution[](1);
+        executions[0] = Execution({ target: target, value: 0, callData: callData });
+    }
+
+    /**
+     * @notice Test: a stale grant to a non-Adapter address (e.g. made under the previous
+     *         whitelisted-target rule) can still be revoked
+     */
+    function test_SetAuthorizationRevokeNonAdapterGranteeSucceeds() public {
+        MockMorphoBlue morpho = _deployAndWhitelistMorpho();
+        address grantee = address(curvePool);
+
+        vm.prank(smartAccount);
+        morpho.setAuthorization(grantee, true);
+        assertTrue(morpho.isAuthorized(smartAccount, grantee), "stale grant present");
+
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(
+                address(morpho), abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, grantee, false)
+            )
+        );
+        assertFalse(morpho.isAuthorized(smartAccount, grantee), "stale authorization revoked");
+    }
+
+    /**
+     * @notice Test: a non-canonical bool word (2) is treated as a grant, not a revoke
+     */
+    function test_SetAuthorizationNonCanonicalBoolToArbitraryAddressReverts() public {
+        MockMorphoBlue morpho = _deployAndWhitelistMorpho();
+        address attacker = makeAddr("attacker");
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.UnauthorizedAuthorizationGrant.selector,
+                address(morpho),
+                attacker
+            )
+        );
+        guardedModule.executeGuardedBatch(
+            _singleExecution(
+                address(morpho),
+                abi.encodeWithSelector(SET_AUTHORIZATION_SELECTOR, attacker, uint256(2))
+            )
+        );
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                   SETOPERATOR GRANT VALIDATION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    bytes4 internal constant SET_OPERATOR_SELECTOR = MockOperatorVault.setOperator.selector;
+
+    /**
+     * @notice Deploy a mock ERC-7540 vault and whitelist (vault, setOperator)
+     */
+    function _deployAndWhitelistOperatorVault() internal returns (MockOperatorVault vault) {
+        vault = new MockOperatorVault();
+        vm.label(address(vault), "MockOperatorVault");
+
+        vm.startPrank(registryOwner);
+        address[] memory whitelistTargets = new address[](1);
+        whitelistTargets[0] = address(vault);
+        bytes4[] memory whitelistSelectors = new bytes4[](1);
+        whitelistSelectors[0] = SET_OPERATOR_SELECTOR;
+        registry.addToWhitelist(whitelistTargets, whitelistSelectors);
+        vm.stopPrank();
+    }
+
+    /**
+     * @notice Test: setOperator granting the Adapter succeeds
+     */
+    function test_SetOperatorGrantToAdapterSucceeds() public {
+        MockOperatorVault vault = _deployAndWhitelistOperatorVault();
+
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(
+                address(vault), abi.encodeWithSelector(SET_OPERATOR_SELECTOR, ADAPTER, true)
+            )
+        );
+        assertTrue(vault.isOperator(smartAccount, ADAPTER), "Adapter operator granted");
+    }
+
+    /**
+     * @notice Test: setOperator granting a whitelisted target other than the Adapter reverts
+     */
+    function test_SetOperatorGrantToWhitelistedTokenReverts() public {
+        MockOperatorVault vault = _deployAndWhitelistOperatorVault();
+        address grantee = address(usdcToken);
+        assertTrue(registry.whitelistedTargets(grantee), "grantee is a whitelisted target");
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.UnauthorizedAuthorizationGrant.selector,
+                address(vault),
+                grantee
+            )
+        );
+        guardedModule.executeGuardedBatch(
+            _singleExecution(
+                address(vault), abi.encodeWithSelector(SET_OPERATOR_SELECTOR, grantee, true)
+            )
+        );
+    }
+
+    /**
+     * @notice Test: setOperator granting an arbitrary address reverts
+     */
+    function test_SetOperatorGrantToArbitraryAddressReverts() public {
+        MockOperatorVault vault = _deployAndWhitelistOperatorVault();
+        address attacker = makeAddr("attacker");
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.UnauthorizedAuthorizationGrant.selector,
+                address(vault),
+                attacker
+            )
+        );
+        guardedModule.executeGuardedBatch(
+            _singleExecution(
+                address(vault), abi.encodeWithSelector(SET_OPERATOR_SELECTOR, attacker, true)
+            )
+        );
+        assertFalse(vault.isOperator(smartAccount, attacker), "attacker never an operator");
+    }
+
+    /**
+     * @notice Test: setOperator revoke (false) of a non-whitelisted address succeeds
+     */
+    function test_SetOperatorRevokeArbitraryAddressSucceeds() public {
+        MockOperatorVault vault = _deployAndWhitelistOperatorVault();
+        address stale = makeAddr("stale");
+
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(
+                address(vault), abi.encodeWithSelector(SET_OPERATOR_SELECTOR, stale, false)
+            )
+        );
+        assertFalse(vault.isOperator(smartAccount, stale), "revoke passed");
+    }
+
+    /**
+     * @notice Test: malformed setOperator calldata (wrong length) reverts
+     */
+    function test_SetOperatorInvalidCalldataLengthReverts() public {
+        MockOperatorVault vault = _deployAndWhitelistOperatorVault();
+
+        vm.prank(smartAccount);
+        vm.expectRevert(GuardedExecModuleUpgradeable.InvalidCalldata.selector);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(
+                address(vault), abi.encodeWithSelector(SET_OPERATOR_SELECTOR, address(uniswapPool))
+            )
+        );
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                 AAVE V4 SPOKE MIN HEALTH FACTOR TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    uint256 internal constant MIN_HEALTH_FACTOR = 1.5e18;
+    uint256 internal constant RESERVE_ID = 7;
+
+    /**
+     * @notice Deploy a mock Aave v4 Spoke and whitelist its five position selectors
+     */
+    function _deployAndWhitelistSpoke() internal returns (MockAaveV4Spoke spoke) {
+        spoke = new MockAaveV4Spoke();
+        vm.label(address(spoke), "MockAaveV4Spoke");
+
+        vm.startPrank(registryOwner);
+        address[] memory whitelistTargets = new address[](5);
+        bytes4[] memory whitelistSelectors = new bytes4[](5);
+        whitelistSelectors[0] = MockAaveV4Spoke.supply.selector;
+        whitelistSelectors[1] = MockAaveV4Spoke.withdraw.selector;
+        whitelistSelectors[2] = MockAaveV4Spoke.borrow.selector;
+        whitelistSelectors[3] = MockAaveV4Spoke.repay.selector;
+        whitelistSelectors[4] = MockAaveV4Spoke.setUsingAsCollateral.selector;
+        for (uint256 i = 0; i < 5; i++) {
+            whitelistTargets[i] = address(spoke);
+        }
+        registry.addToWhitelist(whitelistTargets, whitelistSelectors);
+        vm.stopPrank();
+    }
+
+    /// @notice Encode a Spoke (reserveId, amount, smartAccount) position call
+    function _spokeCall(bytes4 selector, uint256 amount) internal view returns (bytes memory) {
+        return abi.encodeWithSelector(selector, RESERVE_ID, amount, smartAccount);
+    }
+
+    /// @notice Expected getUserAccountData calldata for the smart account
+    function _accountDataCall() internal view returns (bytes memory) {
+        return abi.encodeCall(MockAaveV4Spoke.getUserAccountData, (smartAccount));
+    }
+
+    /**
+     * @notice Test: a session-key borrow that leaves health factor exactly at the minimum passes
+     */
+    function test_SpokeBorrowAtMinHealthFactorSucceeds() public {
+        MockAaveV4Spoke spoke = _deployAndWhitelistSpoke();
+        spoke.setPosition(smartAccount, 3e18, 0, true);
+
+        instance.exec({
+            target: address(guardedModule),
+            value: 0,
+            callData: abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.executeGuardedBatch.selector,
+                _singleExecution(address(spoke), _spokeCall(MockAaveV4Spoke.borrow.selector, 2e18))
+            )
+        });
+
+        assertEq(spoke.debt(smartAccount), 2e18, "borrow executed");
+    }
+
+    /**
+     * @notice Test: a borrow leaving health factor below the minimum reverts the whole batch
+     * @dev This is the self-liquidation path: a compromised session key borrows to the edge
+     *      (the Spoke itself only enforces 1.0) and then liquidates the account from its own EOA.
+     */
+    function test_SpokeBorrowBelowMinHealthFactorRevertsWholeBatch() public {
+        MockAaveV4Spoke spoke = _deployAndWhitelistSpoke();
+        spoke.setPosition(smartAccount, 3e18, 0, true);
+
+        Execution[] memory executions = new Execution[](2);
+        executions[0] = Execution({
+            target: address(uniswapPool),
+            value: 0,
+            callData: abi.encodeWithSelector(SWAP_SELECTOR, 1 ether, 1 ether)
+        });
+        executions[1] = Execution({
+            target: address(spoke),
+            value: 0,
+            callData: _spokeCall(MockAaveV4Spoke.borrow.selector, 2.5e18)
+        });
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.HealthFactorTooLow.selector, address(spoke), 1.2e18
+            )
+        );
+        guardedModule.executeGuardedBatch(executions);
+
+        assertEq(spoke.debt(smartAccount), 0, "borrow rolled back");
+        (, uint256 swapCount) = uniswapPool.getLastCallInfo();
+        assertEq(swapCount, 0, "earlier execution rolled back");
+    }
+
+    /**
+     * @notice Test: withdrawing collateral below the minimum health factor reverts
+     */
+    function test_SpokeWithdrawBelowMinHealthFactorReverts() public {
+        MockAaveV4Spoke spoke = _deployAndWhitelistSpoke();
+        spoke.setPosition(smartAccount, 3e18, 1e18, true);
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.HealthFactorTooLow.selector, address(spoke), 1.4e18
+            )
+        );
+        guardedModule.executeGuardedBatch(
+            _singleExecution(address(spoke), _spokeCall(MockAaveV4Spoke.withdraw.selector, 1.6e18))
+        );
+
+        assertEq(spoke.collateral(smartAccount), 3e18, "withdraw rolled back");
+    }
+
+    /**
+     * @notice Test: setUsingAsCollateral(false) dropping health factor below the minimum reverts
+     */
+    function test_SpokeDisableCollateralBelowMinHealthFactorReverts() public {
+        MockAaveV4Spoke spoke = _deployAndWhitelistSpoke();
+        spoke.setPosition(smartAccount, 3e18, 1e18, true);
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.HealthFactorTooLow.selector, address(spoke), 0
+            )
+        );
+        guardedModule.executeGuardedBatch(
+            _singleExecution(
+                address(spoke),
+                abi.encodeWithSelector(
+                    MockAaveV4Spoke.setUsingAsCollateral.selector, RESERVE_ID, false, smartAccount
+                )
+            )
+        );
+
+        assertTrue(spoke.usingAsCollateral(smartAccount), "collateral toggle rolled back");
+    }
+
+    /**
+     * @notice Test: supply and repay never trigger the health factor check, even below the minimum
+     */
+    function test_SpokeSupplyAndRepaySkipHealthFactorCheck() public {
+        MockAaveV4Spoke spoke = _deployAndWhitelistSpoke();
+        spoke.setPosition(smartAccount, 1.1e18, 1e18, true);
+
+        Execution[] memory executions = new Execution[](2);
+        executions[0] = Execution({
+            target: address(spoke),
+            value: 0,
+            callData: _spokeCall(MockAaveV4Spoke.supply.selector, 0.1e18)
+        });
+        executions[1] = Execution({
+            target: address(spoke),
+            value: 0,
+            callData: _spokeCall(MockAaveV4Spoke.repay.selector, 0.1e18)
+        });
+
+        vm.expectCall(address(spoke), _accountDataCall(), 0);
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(executions);
+
+        assertEq(spoke.collateral(smartAccount), 1.2e18, "supply executed");
+        assertEq(spoke.debt(smartAccount), 0.9e18, "repay executed");
+    }
+
+    /**
+     * @notice Test: the check runs once per Spoke at the end of the batch, so borrow-then-repay
+     *         passes even though the intermediate health factor is below the minimum
+     */
+    function test_SpokeBorrowThenRepayChecksFinalHealthFactorOnce() public {
+        MockAaveV4Spoke spoke = _deployAndWhitelistSpoke();
+        spoke.setPosition(smartAccount, 3e18, 0, true);
+
+        Execution[] memory executions = new Execution[](3);
+        executions[0] = Execution({
+            target: address(spoke),
+            value: 0,
+            callData: _spokeCall(MockAaveV4Spoke.borrow.selector, 2.5e18)
+        });
+        executions[1] = Execution({
+            target: address(spoke),
+            value: 0,
+            callData: _spokeCall(MockAaveV4Spoke.borrow.selector, 0.5e18)
+        });
+        executions[2] = Execution({
+            target: address(spoke),
+            value: 0,
+            callData: _spokeCall(MockAaveV4Spoke.repay.selector, 1.5e18)
+        });
+
+        vm.expectCall(address(spoke), _accountDataCall(), 1);
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(executions);
+
+        assertEq(spoke.debt(smartAccount), 1.5e18, "final debt");
+    }
+
+    /**
+     * @notice Test: withdrawing everything with no debt passes (health factor is uint256 max)
+     */
+    function test_SpokeWithdrawWithoutDebtSucceeds() public {
+        MockAaveV4Spoke spoke = _deployAndWhitelistSpoke();
+        spoke.setPosition(smartAccount, 3e18, 0, true);
+
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(
+                address(spoke), _spokeCall(MockAaveV4Spoke.withdraw.selector, type(uint256).max)
+            )
+        );
+
+        assertEq(spoke.collateral(smartAccount), 0, "full withdraw executed");
+    }
+
+    /**
+     * @notice Test: every Spoke touched in a batch is checked, not only the first
+     */
+    function test_SpokeHealthFactorCheckedOnEverySpoke() public {
+        MockAaveV4Spoke spokeA = _deployAndWhitelistSpoke();
+        MockAaveV4Spoke spokeB = _deployAndWhitelistSpoke();
+        spokeA.setPosition(smartAccount, 3e18, 0, true);
+        spokeB.setPosition(smartAccount, 3e18, 0, true);
+
+        Execution[] memory executions = new Execution[](2);
+        executions[0] = Execution({
+            target: address(spokeA),
+            value: 0,
+            callData: _spokeCall(MockAaveV4Spoke.borrow.selector, 1e18)
+        });
+        executions[1] = Execution({
+            target: address(spokeB),
+            value: 0,
+            callData: _spokeCall(MockAaveV4Spoke.borrow.selector, 2.5e18)
+        });
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.HealthFactorTooLow.selector, address(spokeB), 1.2e18
+            )
+        );
+        guardedModule.executeGuardedBatch(executions);
+    }
+
+    /**
+     * @notice Fuzz: a borrow passes iff the resulting health factor is >= MIN_HEALTH_FACTOR
+     * @dev Collateral factor is 1 and debt is 1e18, so the resulting health factor equals
+     *      `collateral`.
+     */
+    function testFuzz_SpokeBorrowMinHealthFactorBoundary(uint256 collateral) public {
+        collateral = bound(collateral, 1e18, 3e18);
+        MockAaveV4Spoke spoke = _deployAndWhitelistSpoke();
+        spoke.setPosition(smartAccount, collateral, 0, true);
+
+        if (collateral < MIN_HEALTH_FACTOR) {
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    GuardedExecModuleUpgradeable.HealthFactorTooLow.selector,
+                    address(spoke),
+                    collateral
+                )
+            );
+        }
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(address(spoke), _spokeCall(MockAaveV4Spoke.borrow.selector, 1e18))
+        );
+
+        assertEq(spoke.debt(smartAccount), collateral < MIN_HEALTH_FACTOR ? 0 : 1e18, "debt");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    IPOR WITHDRAW MANAGER REQUEST FEE
+    //////////////////////////////////////////////////////////////*/
+
+    uint256 internal constant VAULT_SHARES = 100e18;
+
+    /**
+     * @notice Deploy a mock IPOR WithdrawManager, whitelist requestShares on it and give the
+     *         smart account VAULT_SHARES vault shares
+     */
+    function _deployAndWhitelistWithdrawManager(uint256 fee)
+        internal
+        returns (MockIporWithdrawManager wm, MockPlasmaVaultShares shares)
+    {
+        wm = new MockIporWithdrawManager();
+        vm.label(address(wm), "MockIporWithdrawManager");
+        wm.updateRequestFee(fee);
+        shares = wm.plasmaVault();
+        shares.mint(smartAccount, VAULT_SHARES);
+
+        vm.startPrank(registryOwner);
+        address[] memory whitelistTargets = new address[](1);
+        bytes4[] memory whitelistSelectors = new bytes4[](1);
+        whitelistTargets[0] = address(wm);
+        whitelistSelectors[0] = MockIporWithdrawManager.requestShares.selector;
+        registry.addToWhitelist(whitelistTargets, whitelistSelectors);
+        vm.stopPrank();
+    }
+
+    function _requestSharesCall(uint256 amount) internal pure returns (bytes memory) {
+        return abi.encodeCall(MockIporWithdrawManager.requestShares, (amount));
+    }
+
+    function _requestTwice(address first, address second, uint256 amount)
+        internal
+        pure
+        returns (Execution[] memory executions)
+    {
+        executions = new Execution[](2);
+        executions[0] = Execution({ target: first, value: 0, callData: _requestSharesCall(amount) });
+        executions[1] = Execution({ target: second, value: 0, callData: _requestSharesCall(amount) });
+    }
+
+    /**
+     * @notice Test: at fee 0 requestShares is unrestricted and takes no shares
+     */
+    function test_RequestSharesWithZeroFeeSucceeds() public {
+        (MockIporWithdrawManager wm, MockPlasmaVaultShares shares) =
+            _deployAndWhitelistWithdrawManager(0);
+
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(address(wm), _requestSharesCall(VAULT_SHARES))
+        );
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(_requestTwice(address(wm), address(wm), VAULT_SHARES));
+
+        assertEq(wm.requestedShares(smartAccount), VAULT_SHARES, "request recorded");
+        assertEq(shares.balanceOf(smartAccount), VAULT_SHARES, "no fee taken");
+    }
+
+    /**
+     * @notice Test: with a fee, a request up to the balance passes and pays the fee once
+     */
+    function test_RequestSharesWithFeeWithinBalanceSucceeds() public {
+        uint256 fee = 0.002e18;
+        (MockIporWithdrawManager wm, MockPlasmaVaultShares shares) =
+            _deployAndWhitelistWithdrawManager(fee);
+
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(address(wm), _requestSharesCall(VAULT_SHARES))
+        );
+
+        uint256 feeAmount = VAULT_SHARES * fee / 1e18;
+        assertEq(wm.requestedShares(smartAccount), VAULT_SHARES - feeAmount, "request net of fee");
+        assertEq(shares.balanceOf(smartAccount), VAULT_SHARES - feeAmount, "fee paid once");
+    }
+
+    /**
+     * @notice Test: auditor scenario. With a 1% fee, requestShares(balance * 1e18 / fee) would
+     *         take the whole balance as fee; the module rejects it and the shares stay put.
+     */
+    function test_RequestSharesAboveBalanceRevertsAndKeepsShares() public {
+        uint256 fee = 0.01e18;
+        (MockIporWithdrawManager wm, MockPlasmaVaultShares shares) =
+            _deployAndWhitelistWithdrawManager(fee);
+        uint256 drainAmount = VAULT_SHARES * 1e18 / fee;
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.RequestExceedsBalance.selector,
+                address(wm),
+                drainAmount,
+                VAULT_SHARES
+            )
+        );
+        guardedModule.executeGuardedBatch(
+            _singleExecution(address(wm), _requestSharesCall(drainAmount))
+        );
+
+        assertEq(shares.balanceOf(smartAccount), VAULT_SHARES, "shares untouched");
+        assertEq(wm.requestedShares(smartAccount), 0, "no request recorded");
+
+        // The same call made directly by the account does burn the whole position
+        vm.prank(smartAccount);
+        wm.requestShares(drainAmount);
+        assertEq(shares.balanceOf(smartAccount), 0, "direct call drains the position");
+    }
+
+    /**
+     * @notice Test: with a fee, a request cannot replace one whose window is still open; it can
+     *         once the window has passed or the request was redeemed
+     */
+    function test_RequestSharesWithFeeOnePerWindow() public {
+        (MockIporWithdrawManager wm,) = _deployAndWhitelistWithdrawManager(0.01e18);
+        Execution[] memory request = _singleExecution(address(wm), _requestSharesCall(1e18));
+
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(request);
+        uint256 windowEnd = block.timestamp + wm.getWithdrawWindow();
+
+        vm.warp(windowEnd);
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.RequestAlreadyPending.selector, address(wm), windowEnd
+            )
+        );
+        guardedModule.executeGuardedBatch(request);
+
+        vm.warp(windowEnd + 1);
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(request);
+
+        wm.clearRequest(smartAccount);
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(request);
+    }
+
+    /**
+     * @notice Test: with a fee, a batch cannot send two requests to the same WithdrawManager,
+     *         but may send one to each of two WithdrawManagers
+     */
+    function test_RequestSharesWithFeeOnePerWithdrawManagerPerBatch() public {
+        (MockIporWithdrawManager wm,) = _deployAndWhitelistWithdrawManager(0.01e18);
+        (MockIporWithdrawManager otherWm, MockPlasmaVaultShares otherShares) =
+            _deployAndWhitelistWithdrawManager(0.01e18);
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.DuplicateRequest.selector, address(wm)
+            )
+        );
+        guardedModule.executeGuardedBatch(_requestTwice(address(wm), address(wm), 1e18));
+
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(_requestTwice(address(wm), address(otherWm), 1e18));
+        assertGt(wm.requestedShares(smartAccount), 0, "first request");
+        assertGt(otherWm.requestedShares(smartAccount), 0, "second request");
+        assertLt(otherShares.balanceOf(smartAccount), VAULT_SHARES, "second fee paid");
+    }
+
+    /**
+     * @notice Test: a request fee above MAX_REQUEST_FEE (1%) is rejected
+     */
+    function test_RequestSharesFeeAboveCapReverts() public {
+        uint256 fee = 0.01e18 + 1;
+        (MockIporWithdrawManager wm, MockPlasmaVaultShares shares) =
+            _deployAndWhitelistWithdrawManager(fee);
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.RequestFeeTooHigh.selector, address(wm), fee
+            )
+        );
+        guardedModule.executeGuardedBatch(_singleExecution(address(wm), _requestSharesCall(1e18)));
+
+        assertEq(shares.balanceOf(smartAccount), VAULT_SHARES, "shares untouched");
+    }
+
+    /**
+     * @notice Test: with a fee, a withdraw window shorter than 1 day is rejected, so a session
+     *         key cannot repeat requests faster than once a day
+     */
+    function test_RequestSharesWithFeeShortWindowReverts() public {
+        (MockIporWithdrawManager wm, MockPlasmaVaultShares shares) =
+            _deployAndWhitelistWithdrawManager(0.01e18);
+        wm.updateWithdrawWindow(1 days - 1);
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.WithdrawWindowTooShort.selector,
+                address(wm),
+                1 days - 1
+            )
+        );
+        guardedModule.executeGuardedBatch(_singleExecution(address(wm), _requestSharesCall(1e18)));
+
+        assertEq(shares.balanceOf(smartAccount), VAULT_SHARES, "shares untouched");
+    }
+
+    /**
+     * @notice Test: requestShares calldata must be exactly selector + one word
+     */
+    function test_RequestSharesInvalidCalldataReverts() public {
+        (MockIporWithdrawManager wm,) = _deployAndWhitelistWithdrawManager(0);
+
+        vm.prank(smartAccount);
+        vm.expectRevert(GuardedExecModuleUpgradeable.InvalidCalldata.selector);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(address(wm), abi.encodePacked(_requestSharesCall(1e18), uint256(0)))
+        );
+    }
+
+    /**
+     * @notice Fuzz: whatever amounts a session key requests within one window, with any fee up
+     *         to the cap the smart account loses at most fee * balance
+     */
+    function testFuzz_RequestSharesLossBoundedPerWindow(
+        uint256 fee,
+        uint256[5] memory amounts
+    )
+        public
+    {
+        fee = bound(fee, 1, 0.01e18);
+        (MockIporWithdrawManager wm, MockPlasmaVaultShares shares) =
+            _deployAndWhitelistWithdrawManager(fee);
+
+        for (uint256 i = 0; i < amounts.length; i++) {
+            Execution[] memory request =
+                _singleExecution(address(wm), _requestSharesCall(bound(amounts[i], 1, type(uint128).max)));
+            vm.prank(smartAccount);
+            try guardedModule.executeGuardedBatch(request) { } catch { }
+        }
+
+        assertGe(
+            shares.balanceOf(smartAccount),
+            VAULT_SHARES - VAULT_SHARES * fee / 1e18,
+            "loss above fee * balance"
         );
     }
 }

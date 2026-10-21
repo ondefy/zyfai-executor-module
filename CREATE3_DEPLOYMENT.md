@@ -32,6 +32,7 @@ With CREATE3, you can include different initialization data per chain (e.g., dif
 ```bash
 export PRIVATE_KEY=0xYourPrivateKey
 export TARGET_REGISTRY_ADDRESS=0xYourRegistryAddress  # Can differ per chain!
+export ADAPTER_ADDRESS=0xaffD3c3cD06cf499deddf78b26868018A93f2C31  # Implementation constructor arg
 ```
 
 ### 2. Deploy on Base
