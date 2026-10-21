@@ -24,29 +24,32 @@ All commands run from this repo. `PRIVATE_KEY` is our deployer key; never echo o
 
 ### 1. Deploy registry + module (deployer as temporary owner)
 
+The module implementation pins the partner Adapter as its only allowed grantee, so deploy the
+partner Adapter first (defi-adapter `DeployAll` + `ConfigureVault` for each partner vault).
+
 ```bash
+PARTNER_ADAPTER=<partner adapter proxy> \
 forge script script/3-DeployPartnerInstance.s.sol \
   --rpc-url $BASE_RPC_URL --broadcast --verify
 ```
 
-Deploys `TargetRegistry(deployer)`, the `GuardedExecModuleUpgradeable` implementation, and an
-ERC1967 proxy initialized with `(registry, deployer)`. Record the **registry** and **module proxy**
-addresses from the logs.
+Deploys `TargetRegistry(deployer)`, the `GuardedExecModuleUpgradeable(adapter)` implementation,
+and an ERC1967 proxy initialized with `(registry, deployer)`. Record the **registry** and **module
+proxy** addresses from the logs.
 
-### 2. Clone the Base whitelist (while we still own the registry)
+### 2. Whitelist the partner venues (while we still own the registry)
 
-The Base whitelist scripts read the target registry from `BASE_TARGET_REGISTRY_ADDRESS`:
+Whitelist only what the partner agreed to. For the IPOR NVDA Carry Trade vault:
 
 ```bash
-BASE_TARGET_REGISTRY_ADDRESS=<partner registry> \
-  npx ts-node hardhat/scripts/addWhitelist/4.0-base-whitelist-registry.ts
-
-BASE_TARGET_REGISTRY_ADDRESS=<partner registry> \
-  npx ts-node hardhat/scripts/addRecipientForTransfer/6-add-erc20-token-recipient-base.ts
+PARTNER_TARGET_REGISTRY=<partner registry> \
+PARTNER_ADAPTER=<partner adapter proxy> \
+forge script script/5-WhitelistPartnerNvda.s.sol \
+  --rpc-url $BASE_RPC_URL --broadcast
 ```
 
-This copies the Adapter selectors, ERC20 approve spenders, and allowed ERC20 recipients from
-`hardhat/protocolData/basedata.ts`.
+This adds the same seven pairs the shared prod registry holds for that vault, pointed at the
+partner Adapter.
 
 ### 3. Transfer ownership of all four contracts
 

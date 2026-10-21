@@ -11,27 +11,29 @@ import { TargetRegistry } from "../src/registry/TargetRegistry.sol";
  * @notice Deploys a dedicated TargetRegistry + GuardedExecModuleUpgradeable (impl + proxy) pair
  *         for a partner, owned by the DEPLOYER so the whitelist can be configured before
  *         ownership is handed over.
- * @dev Run with:
+ * @dev The module implementation pins the partner Adapter (the only allowed grantee), so the
+ *      partner Adapter must be deployed first. Run with:
+ *      PARTNER_ADAPTER=0x... \
  *      forge script script/3-DeployPartnerInstance.s.sol --rpc-url $RPC_URL \
  *        --private-key $PRIVATE_KEY --broadcast --verify -vvvv
  *
  * WORKFLOW (partner hand-over):
- *   1. Run this script — registry + module are deployed with the deployer as owner.
- *   2. Clone the whitelist onto the new registry:
- *        BASE_TARGET_REGISTRY_ADDRESS=<new registry> \
- *          npx ts-node hardhat/scripts/addWhitelist/4.0-base-whitelist-registry.ts
- *        BASE_TARGET_REGISTRY_ADDRESS=<new registry> \
- *          npx ts-node hardhat/scripts/addRecipientForTransfer/6-add-erc20-token-recipient-base.ts
- *   3. Transfer ownership of BOTH contracts to the partner:
+ *   1. Deploy the partner Adapter (defi-adapter), then run this script — registry + module are
+ *      deployed with the deployer as owner.
+ *   2. Whitelist the partner venues on the new registry (e.g. script/5-WhitelistPartnerNvda.s.sol).
+ *   3. Transfer ownership of all four contracts to the partner:
  *        script/4-TransferPartnerOwnership.s.sol
  */
 contract DeployPartnerInstance is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
+        address adapter = vm.envAddress("PARTNER_ADAPTER");
+        require(adapter.code.length > 0, "PARTNER_ADAPTER has no code");
 
         console.log("=== Deploying Partner Instance (registry + module) ===");
         console.log("Deployer (temporary owner):", deployer);
+        console.log("Partner adapter:", adapter);
         console.log("Deployer balance:", deployer.balance);
 
         vm.startBroadcast(deployerPrivateKey);
@@ -43,7 +45,7 @@ contract DeployPartnerInstance is Script {
 
         // Step 2: Module implementation.
         console.log("\n--- Step 2: Deploy GuardedExecModuleUpgradeable implementation ---");
-        GuardedExecModuleUpgradeable implementation = new GuardedExecModuleUpgradeable();
+        GuardedExecModuleUpgradeable implementation = new GuardedExecModuleUpgradeable(adapter);
         console.log("Implementation deployed to:", address(implementation));
 
         // Step 3: ERC1967 proxy wired to the partner registry, owned by the deployer.
@@ -61,6 +63,7 @@ contract DeployPartnerInstance is Script {
         assert(registry.owner() == deployer);
         assert(module.owner() == deployer);
         assert(address(module.registry()) == address(registry));
+        assert(module.ADAPTER() == adapter);
 
         console.log("\n=== Deployment Success ===");
         console.log("TargetRegistry:", address(registry));
@@ -70,7 +73,7 @@ contract DeployPartnerInstance is Script {
 
         console.log("\n=== Next Steps ===");
         console.log("1. Verify the three contracts on the block explorer");
-        console.log("2. Clone the whitelist onto the new registry (see script header)");
+        console.log("2. Whitelist the partner venues (script/5-WhitelistPartnerNvda.s.sol)");
         console.log("3. Run script/4-TransferPartnerOwnership.s.sol to hand over ownership");
     }
 }
