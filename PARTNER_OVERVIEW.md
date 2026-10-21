@@ -11,8 +11,9 @@ infrastructure** — your own instance, separate from everyone else's, on Base:
 | **Target Registry** | Your allowlist. It defines exactly which protocols, vaults and actions the automation is allowed to touch. Nothing outside this list can ever be executed. | `0xE23791a655Ad7707DB955d3a86f5e4e647799D95` |
 | **Executor Module** | The gatekeeper installed on your smart account. Every action the automation takes goes through it, and it refuses anything your registry has not approved. | `0x9d7d5F76d8f529e4dDcDF7aC62e11A36e516BE17` |
 | **Adapter** | The single entry point used to deposit into and withdraw from vaults. It is built so that funds can only ever return to your own smart account — there is no way to redirect them anywhere else. | `0x4439eF06551D0580B4ebc5c2a2AB87cF4C1F9c64` |
+| **Adapter beacon** | The upgrade key of the Adapter: whoever owns it decides which code the Adapter runs. It transfers to you together with everything else. | `0x0b7367de36Bc208E0A223fE5dCDcb89645c4E002` |
 
-All three contracts are deployed, verified on BaseScan, and already tested
+All four contracts are deployed, verified on BaseScan, and already tested
 end-to-end with a real deposit and withdrawal on a live vault.
 
 ## How the security model works
@@ -33,11 +34,12 @@ In short: we run the engine, you own the rails it runs on.
 
 ## Ownership
 
-Today the three contracts are owned by a ZyFAI deployer account (needed for the
+Today the four contracts are owned by a ZyFAI deployer account (needed for the
 initial setup and testing). The next step is a **full ownership transfer to
-you**, using a two-step handover: we propose the transfer, and it only takes
-effect once you accept it from your own wallet — so ownership can never land at
-a wrong address.
+you**, using a two-step handover wherever the contracts support it: we propose
+the transfer, and it only takes effect once you accept it from your own wallet —
+so ownership can never land at a wrong address. (The beacon transfers in a
+single step; we verify the destination address with you before sending it.)
 
 **Once the transfer is complete, ZyFAI has zero control over this
 infrastructure.** We cannot modify your allowlist, cannot change or upgrade the

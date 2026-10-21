@@ -48,19 +48,27 @@ BASE_TARGET_REGISTRY_ADDRESS=<partner registry> \
 This copies the Adapter selectors, ERC20 approve spenders, and allowed ERC20 recipients from
 `hardhat/protocolData/basedata.ts`.
 
-### 3. Transfer ownership of both contracts
+### 3. Transfer ownership of all four contracts
+
+The partner must end up owning the **registry, module proxy, adapter proxy AND the adapter's
+beacon** — the beacon owner controls the adapter implementation, so leaving it behind would
+leave Zyfai with de-facto control over the adapter.
 
 ```bash
-PARTNER_OWNER=<partner wallet> \
+PARTNER_OWNER=<partner multisig> \
 PARTNER_TARGET_REGISTRY=<partner registry> \
 PARTNER_GUARDED_EXEC_MODULE=<partner module proxy> \
+PARTNER_ADAPTER=<partner adapter proxy> \
+PARTNER_ADAPTER_BEACON=<partner adapter beacon> \
 forge script script/4-TransferPartnerOwnership.s.sol \
   --rpc-url $BASE_RPC_URL --broadcast
 ```
 
-Both contracts are **Ownable2Step**: the transfer only sets `pendingOwner`. The partner must call
-`acceptOwnership()` on the registry **and** the module proxy from their owner wallet. Verify
-`owner()` on both afterwards (BaseScan).
+Registry, module and adapter are **Ownable2Step**: the transfer only sets `pendingOwner` and
+the partner must call `acceptOwnership()` on all three from their owner wallet. The **beacon is
+a plain Ownable**: its transfer is one-step and effective immediately — triple-check
+`PARTNER_OWNER` before broadcasting. Verify `owner()` on all four afterwards (BaseScan), plus
+`pendingOwner() == 0` on the three 2-step contracts once accepted.
 
 ### 4. Wire into zyfai-api
 
