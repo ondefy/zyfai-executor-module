@@ -37,9 +37,10 @@ GuardedExecModule is an ERC-7579 executor module that provides secure, whitelist
 3. **ERC20 Approve Authorization**: The spender of an ERC20 `approve` must be a whitelisted target (a trusted contract such as the Zyfai Adapter or a protocol pool)
 4. **Authorization Grant Validation**: For Morpho Blue `setAuthorization(address,bool)` (`0xeecea000`) and ERC-7540 `setOperator(address,bool)` (`0x558a7297`), a grant (`true`) must name the Zyfai Adapter (`ADAPTER`). Any other grantee reverts, including other whitelisted targets. A revoke (`false`) is always allowed for any address, so a stale grant can always be removed. `ADAPTER` is an immutable set in the implementation constructor (prod: `0xaffD3c3cD06cf499deddf78b26868018A93f2C31` on Ethereum, Base and Arbitrum). It is fixed per implementation deployment: changing it requires deploying a new implementation and upgrading the module proxy
 5. **Aave v4 Spoke Health Factor**: After a batch that calls `borrow` (`0xd6bda0c0`), `withdraw` (`0x0ad58d2f`) or `setUsingAsCollateral` (`0x9e35c533`) on a target, the module reads `getUserAccountData(smartAccount).healthFactor` on that target and reverts the whole batch if it is below 1.5 (`MIN_HEALTH_FACTOR`, WAD). The Spoke itself only enforces 1.0, so this stops a session key from pushing the account to the edge of liquidation and liquidating it. These three selectors must only be whitelisted on Aave v4 Spokes
-6. **Owner-Controlled Whitelist**: Only contract owner can modify whitelist (should be multisig for production)
-7. **Pausable**: Emergency stop capability for compromised session keys or malicious whitelist changes
-8. **Two-Step Ownership Transfer**: Prevents accidental or malicious ownership transfers
+6. **IPOR Request Fee**: IPOR Fusion WithdrawManager `requestShares(uint256)` (`0xfc415e9c`) takes its fee from the smart account's vault shares with no cap or approval, and each request overwrites the last. While the target's `getRequestFee()` is non-zero, a request must not exceed the smart account's vault shares, must not replace a request whose withdraw window is still open, must be the only one to that WithdrawManager in the batch, the fee must be at most 1% and the withdraw window at least 1 day. A session key can then cost at most 1% of the position per vault per day. At fee 0 the call is unrestricted. This selector must only be whitelisted on IPOR WithdrawManagers
+7. **Owner-Controlled Whitelist**: Only contract owner can modify whitelist (should be multisig for production)
+8. **Pausable**: Emergency stop capability for compromised session keys or malicious whitelist changes
+9. **Two-Step Ownership Transfer**: Prevents accidental or malicious ownership transfers
 
 ### Selectors that must never be whitelisted
 
