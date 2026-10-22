@@ -50,6 +50,7 @@ These calls would let a session key bypass the checks above:
 - Aave v4 Spoke: `setUserPositionManager` (`0x8874e104`), `setUserPositionManagersWithSig` (`0x03ed05c1`), `multicall` (`0xac9650d8`), `liquidationCall`, `updateUserDynamicConfig` (`0x826002e2`)
 - Compound V3 Comet: `transfer`, `transferFrom`, `transferAsset`, `transferAssetFrom` (they move base balance into debt without reaching the no-debt check), `withdrawTo`, `withdrawFrom`, `supplyFrom`, `allow` (they hand the base asset or the whole position to another address)
 - Any protocol's operator/delegate/authorization grant that is not validated above (only `0xeecea000` and `0x558a7297` are checked)
+- Any selector on a contract that executes caller-chosen calls or lets the caller choose where tokens go, such as Morpho Bundler3 (`multicall`, `0x374f435d`) or the Enso router (`routeSingle` `0xb94c3609`, `routeMulti` `0xf52e33f5`). Whitelisting any selector also makes the contract an accepted `approve` spender, and through Bundler3 the account, as `initiator`, can make Morpho GeneralAdapter1 `erc20TransferFrom` its tokens to any receiver. A separate spender list would not help: GeneralAdapter1 must stay an approved spender for Morpho vault flows
 
 ## 👥 Actors and Roles
 

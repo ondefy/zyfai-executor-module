@@ -156,14 +156,10 @@ export const SELECTORS = {
   
   // Routing/Swap functions
   ROUTE_MULTI: '0xf52e33f5' as `0x${string}`, // routeMulti(...)
-  ROUTE_SINGLE: '0xb94c3609' as `0x${string}`, // routeSingle(...)
   
   // Morpho Adapter functions
   MORPHO_ADAPTER_ERC4626_DEPOSIT: '0x6ef5eeae' as `0x${string}`, // erc4626Deposit(address,uint256,uint256,address)
   MORPHO_ADAPTER_ERC4626_REDEEM: '0xa7f6e606' as `0x${string}`, // erc4626Redeem(address,uint256,uint256,address,address)
-  
-  // Morpho Bundler functions
-  MORPHO_BUNDLER_MULTICALL: '0x374f435d' as `0x${string}`, // multicall((address,bytes,uint256,bool,bytes32)[])
   
   // Merkl functions
   MERKL_CLAIM: '0x71ee95c0' as `0x${string}`, // claim(address[],address[],uint256[],bytes32[][])
@@ -239,17 +235,7 @@ export const whitelistConfig: WhitelistItem[] = [
   },
   
   // ========================================
-  // ROUTING/SWAP FUNCTIONS
-  // ========================================
-
-  {
-    target: '0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf' as Address,
-    selector: SELECTORS.ROUTE_SINGLE,
-    description: "Router - routeSingle()",
-  },
-  
-  // ========================================
-  // MORPHO ADAPTER/BUNDLER FUNCTIONS (Base)
+  // MORPHO ADAPTER FUNCTIONS (Base)
   // ========================================
   {
     target: '0xb98c948cfa24072e58935bc004a8a7b376ae746a' as Address,
@@ -260,11 +246,6 @@ export const whitelistConfig: WhitelistItem[] = [
     target: '0xb98c948cfa24072e58935bc004a8a7b376ae746a' as Address,
     selector: SELECTORS.MORPHO_ADAPTER_ERC4626_REDEEM,
     description: "Morpho Adapter (Base) - erc4626Redeem()",
-  },
-  {
-    target: '0x6BFd8137e702540E7A42B74178A4a49Ba43920C4' as Address,
-    selector: SELECTORS.MORPHO_BUNDLER_MULTICALL,
-    description: "Morpho Bundler3 (Base) - multicall()",
   },
   
   // ========================================

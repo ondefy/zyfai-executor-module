@@ -124,15 +124,9 @@ export const SELECTORS = {
   // Harvest Autopilot uses redeem instead of withdraw
   REDEEM: '0xba087652' as `0x${string}`, // redeem(uint256,address,address)
   
-  // Routing/Swap functions
-  ROUTE_SINGLE: '0xb94c3609' as `0x${string}`, // routeSingle(...)
-  
   // Morpho Adapter functions
   MORPHO_ADAPTER_ERC4626_DEPOSIT: '0x6ef5eeae' as `0x${string}`, // erc4626Deposit(address,uint256,uint256,address)
   MORPHO_ADAPTER_ERC4626_REDEEM: '0xa7f6e606' as `0x${string}`, // erc4626Redeem(address,uint256,uint256,address,address)
-  
-  // Morpho Bundler functions
-  MORPHO_BUNDLER_MULTICALL: '0x374f435d' as `0x${string}`, // multicall((address,bytes,uint256,bool,bytes32)[])
   
   // Merkl functions
   MERKL_CLAIM: '0x71ee95c0' as `0x${string}`, // claim(address[],address[],uint256[],bytes32[][])
@@ -205,16 +199,7 @@ export const whitelistConfig: WhitelistItem[] = [
   },
   
   // ========================================
-  // ROUTING/SWAP FUNCTIONS
-  // ========================================
-  {
-    target: '0xF75584eF6673aD213a685a1B58Cc0330B8eA22Cf' as Address,
-    selector: SELECTORS.ROUTE_SINGLE,
-    description: "Router - routeSingle()",
-  },
-  
-  // ========================================
-  // MORPHO ADAPTER/BUNDLER FUNCTIONS (Arbitrum)
+  // MORPHO ADAPTER FUNCTIONS (Arbitrum)
   // ========================================
   {
     target: '0x9954aFB60BB5A222714c478ac86990F221788B88' as Address,
@@ -225,11 +210,6 @@ export const whitelistConfig: WhitelistItem[] = [
     target: '0x9954aFB60BB5A222714c478ac86990F221788B88' as Address,
     selector: SELECTORS.MORPHO_ADAPTER_ERC4626_REDEEM,
     description: "Morpho Adapter (Arbitrum) - erc4626Redeem()",
-  },
-  {
-    target: '0x1fa4431bc113d308bee1d46b0e98cb805fb48c13' as Address,
-    selector: SELECTORS.MORPHO_BUNDLER_MULTICALL,
-    description: "Morpho Bundler3 (Arbitrum) - multicall()",
   },
   
   // ========================================
