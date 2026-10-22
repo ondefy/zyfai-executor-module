@@ -12,6 +12,7 @@ import { UUPSUpgradeable } from
 import { MockDeFiPool } from "test/mocks/MockDeFiPool.sol";
 import { MockERC20 } from "test/mocks/MockERC20.sol";
 import { MockAaveV4Spoke } from "test/mocks/MockAaveV4Spoke.sol";
+import { MockComet } from "test/mocks/MockComet.sol";
 import { MockIporWithdrawManager, MockPlasmaVaultShares } from
     "test/mocks/MockIporWithdrawManager.sol";
 import { MockMorphoBlue } from "test/mocks/MockMorphoBlue.sol";
@@ -1894,6 +1895,172 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         );
 
         assertEq(spoke.debt(smartAccount), collateral < MIN_HEALTH_FACTOR ? 0 : 1e18, "debt");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        COMPOUND V3 NO-DEBT TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Deploy a mock Comet on usdcToken and whitelist its supply and withdraw selectors
+     * @dev Mirrors the live whitelist, which grants a Comet exactly these two selectors.
+     */
+    function _deployAndWhitelistComet() internal returns (MockComet comet) {
+        comet = new MockComet(address(usdcToken));
+        vm.label(address(comet), "MockComet");
+
+        address[] memory whitelistTargets = new address[](2);
+        bytes4[] memory whitelistSelectors = new bytes4[](2);
+        whitelistTargets[0] = address(comet);
+        whitelistSelectors[0] = MockComet.supply.selector;
+        whitelistTargets[1] = address(comet);
+        whitelistSelectors[1] = MockComet.withdraw.selector;
+
+        vm.prank(registryOwner);
+        registry.addToWhitelist(whitelistTargets, whitelistSelectors);
+    }
+
+    /**
+     * @notice Test: a session key supplying collateral and borrowing the base asset reverts, and
+     *         the whole batch rolls back
+     * @dev This is the finding this check exists for. Comet's `withdraw` doubles as its borrow
+     *      entrypoint, so on the whitelist alone a session key could pledge the Safe's WETH and
+     *      borrow USDC to Comet's limit, a few percent above the liquidation threshold, then wait
+     *      for a permissionless `absorb` to take the collateral minus the liquidation penalty.
+     */
+    function test_CometCollateralBorrowRevertsWholeBatch() public {
+        MockComet comet = _deployAndWhitelistComet();
+
+        Execution[] memory executions = new Execution[](2);
+        executions[0] = Execution({
+            target: address(comet),
+            value: 0,
+            callData: abi.encodeCall(MockComet.supply, (address(wethToken), 10e18))
+        });
+        executions[1] = Execution({
+            target: address(comet),
+            value: 0,
+            callData: abi.encodeCall(MockComet.withdraw, (address(usdcToken), 9e18))
+        });
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.CometDebtNotAllowed.selector, address(comet), 9e18
+            )
+        );
+        guardedModule.executeGuardedBatch(executions);
+
+        assertEq(comet.debt(smartAccount), 0, "borrow rolled back");
+        assertEq(comet.collateral(smartAccount), 0, "collateral supply rolled back");
+    }
+
+    /**
+     * @notice Test: withdrawing no more than the supplied base balance is the lending exit and
+     *         still passes
+     */
+    function test_CometWithdrawWithinSuppliedBalanceSucceeds() public {
+        MockComet comet = _deployAndWhitelistComet();
+        comet.setPosition(smartAccount, 1000e6, 0, 0);
+
+        instance.exec({
+            target: address(guardedModule),
+            value: 0,
+            callData: abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.executeGuardedBatch.selector,
+                _singleExecution(
+                    address(comet),
+                    abi.encodeCall(MockComet.withdraw, (address(usdcToken), 1000e6))
+                )
+            )
+        });
+
+        assertEq(comet.baseBalance(smartAccount), 0, "position exited");
+        assertEq(comet.debt(smartAccount), 0, "exit left no debt");
+    }
+
+    /**
+     * @notice Test: a batch that only supplies is not debt-checked
+     * @dev `supply` cannot create debt, so it is not checked. This keeps the check off every
+     *      other venue that shares the `supply(address,uint256)` selector.
+     */
+    function test_CometSupplyOnlyBatchSkipsDebtCheck() public {
+        MockComet comet = _deployAndWhitelistComet();
+
+        vm.expectCall(address(comet), abi.encodeCall(MockComet.borrowBalanceOf, (smartAccount)), 0);
+        instance.exec({
+            target: address(guardedModule),
+            value: 0,
+            callData: abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.executeGuardedBatch.selector,
+                _singleExecution(
+                    address(comet), abi.encodeCall(MockComet.supply, (address(usdcToken), 500e6))
+                )
+            )
+        });
+
+        assertEq(comet.baseBalance(smartAccount), 500e6, "supply executed");
+    }
+
+    /**
+     * @notice Test: a pre-existing borrow can still be unwound — repay, then withdraw the freed
+     *         collateral in the same batch
+     * @dev The check reads the final position, so it does not trap an account that already owes
+     *      on a Comet, whether the owner opened that debt directly or it predates this check.
+     */
+    function test_CometRepayAndCollateralWithdrawUnwindsExistingDebt() public {
+        MockComet comet = _deployAndWhitelistComet();
+        comet.setPosition(smartAccount, 0, 400e6, 10e18);
+
+        Execution[] memory executions = new Execution[](2);
+        executions[0] = Execution({
+            target: address(comet),
+            value: 0,
+            callData: abi.encodeCall(MockComet.supply, (address(usdcToken), 400e6))
+        });
+        executions[1] = Execution({
+            target: address(comet),
+            value: 0,
+            callData: abi.encodeCall(MockComet.withdraw, (address(wethToken), 10e18))
+        });
+
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(executions);
+
+        assertEq(comet.debt(smartAccount), 0, "debt repaid");
+        assertEq(comet.collateral(smartAccount), 0, "collateral released");
+    }
+
+    /**
+     * @notice Test: the debt check runs on every Comet a batch withdraws from
+     */
+    function test_CometDebtCheckedOnEveryComet() public {
+        MockComet lending = _deployAndWhitelistComet();
+        MockComet borrowing = _deployAndWhitelistComet();
+        lending.setPosition(smartAccount, 1000e6, 0, 0);
+        borrowing.setPosition(smartAccount, 0, 0, 10e18);
+
+        Execution[] memory executions = new Execution[](2);
+        executions[0] = Execution({
+            target: address(lending),
+            value: 0,
+            callData: abi.encodeCall(MockComet.withdraw, (address(usdcToken), 1000e6))
+        });
+        executions[1] = Execution({
+            target: address(borrowing),
+            value: 0,
+            callData: abi.encodeCall(MockComet.withdraw, (address(usdcToken), 5e18))
+        });
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.CometDebtNotAllowed.selector, address(borrowing), 5e18
+            )
+        );
+        guardedModule.executeGuardedBatch(executions);
+
+        assertEq(lending.baseBalance(smartAccount), 1000e6, "first withdraw rolled back");
     }
 
     /*//////////////////////////////////////////////////////////////

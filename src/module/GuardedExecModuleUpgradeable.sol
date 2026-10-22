@@ -9,6 +9,7 @@ import { ERC7579ExecutorBase } from "modulekit/Modules.sol";
 import { Execution } from "modulekit/accounts/erc7579/lib/ExecutionLib.sol";
 import { TargetRegistry } from "../registry/TargetRegistry.sol";
 import { IAaveV4Spoke } from "../interfaces/IAaveV4Spoke.sol";
+import { IComet } from "../interfaces/IComet.sol";
 import { IIporWithdrawManager } from "../interfaces/IIporWithdrawManager.sol";
 
 /**
@@ -83,6 +84,23 @@ contract GuardedExecModuleUpgradeable is
      *      which leaves room for gap moves on volatile collateral such as tokenized equities.
      */
     uint256 private constant MIN_HEALTH_FACTOR = 1.5e18;
+
+    /**
+     * @notice Selector of Compound V3 `withdraw(address,uint256)` on a Comet market
+     * @dev In Comet this is also the borrow entrypoint: withdrawing the base asset past the
+     *      supplied balance opens debt against whatever collateral the account holds. Comet only
+     *      enforces its own collateral factor, so on the whitelist alone a session key could
+     *      supply the smart account's WETH or cbBTC as collateral and borrow the base asset to
+     *      Comet's limit, a few percent above the liquidation threshold, where anyone can call
+     *      `absorb` and take the collateral minus the liquidation penalty. Zyfai uses Comet for
+     *      lending only, so a batch must leave no Comet debt at all.
+     *      `supply` needs no guard: supplying the base asset repays, and supplying collateral
+     *      cannot by itself create debt. Never whitelist a Comet's `transfer`, `transferFrom`,
+     *      `transferAsset` or `transferAssetFrom` (they move base balance into debt without
+     *      reaching this check), nor `withdrawTo`, `withdrawFrom`, `supplyFrom` or `allow` (they
+     *      hand the base asset or the whole position to another address).
+     */
+    bytes4 private constant COMET_WITHDRAW_SELECTOR = 0xf3fef3a3;
 
     /**
      * @notice Selector of IPOR Fusion WithdrawManager `requestShares(uint256)`
@@ -223,6 +241,11 @@ contract GuardedExecModuleUpgradeable is
     /// @param spoke The Aave v4 Spoke whose health factor check failed
     /// @param healthFactor The smart account's health factor on that Spoke after the batch (WAD)
     error HealthFactorTooLow(address spoke, uint256 healthFactor);
+
+    /// @notice Thrown when a batch leaves the smart account owing base assets on a Comet market
+    /// @param comet The Compound V3 Comet the smart account still owes on
+    /// @param debt The smart account's base-asset debt on that Comet after the batch
+    error CometDebtNotAllowed(address comet, uint256 debt);
 
     /// @notice Thrown when requestShares targets a WithdrawManager whose request fee exceeds
     ///         MAX_REQUEST_FEE
@@ -396,6 +419,13 @@ contract GuardedExecModuleUpgradeable is
      *      Spoke selectors: `setUserPositionManager`, `setUserPositionManagersWithSig` and
      *      `multicall` route around this check, `updateUserDynamicConfig` can lower the health
      *      factor unchecked, and `liquidationCall` spends the smart account's funds on others.
+     *      Likewise, every target called with the Compound V3 `withdraw(address,uint256)`
+     *      selector must report zero base-asset debt for the smart account at the end of the
+     *      batch, otherwise the whole batch reverts, because in Comet that withdraw is also the
+     *      borrow entrypoint. Checking the end of the batch lets a batch repay existing debt and
+     *      then withdraw the freed collateral. Any target whitelisted with that selector must be
+     *      a Comet: on any other contract the `borrowBalanceOf` call reverts the batch. See
+     *      COMET_WITHDRAW_SELECTOR for the Comet selectors that must never be whitelisted.
      * @param executions Array of Execution structs containing target, value, and callData
      */
     function executeGuardedBatch(
@@ -469,6 +499,7 @@ contract GuardedExecModuleUpgradeable is
         _execute(executions);
 
         _validateSpokeHealthFactors(spokes, spokeCount);
+        _validateCometsHaveNoDebt(targets, selectors);
 
         emit GuardedBatchExecuted(msg.sender, targets, selectors, block.timestamp);
     }
@@ -637,6 +668,36 @@ contract GuardedExecModuleUpgradeable is
                 IAaveV4Spoke(spokes[i]).getUserAccountData(msg.sender).healthFactor;
             if (healthFactor < MIN_HEALTH_FACTOR) {
                 revert HealthFactorTooLow(spokes[i], healthFactor);
+            }
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    /**
+     * @notice Require the smart account to owe nothing on every Comet the batch withdrew from
+     * @dev Runs after execution, over the target and selector arrays the batch already collected
+     *      for the event, so the validation loop needs no extra bookkeeping. msg.sender is the
+     *      smart account, and Comet's `withdraw(address,uint256)` acts on the caller's own
+     *      position, so this reads the position the batch just touched. Zyfai lends on Comet and
+     *      never borrows there, so the bound is zero debt rather than a health factor margin: it
+     *      holds whatever collateral the account already had, and whoever supplied it.
+     * @param targets The target of each execution in the batch
+     * @param selectors The selector of each execution in the batch
+     */
+    function _validateCometsHaveNoDebt(
+        address[] memory targets,
+        bytes4[] memory selectors
+    )
+        internal
+        view
+    {
+        uint256 length = selectors.length;
+        for (uint256 i = 0; i < length;) {
+            if (selectors[i] == COMET_WITHDRAW_SELECTOR) {
+                uint256 debt = IComet(targets[i]).borrowBalanceOf(msg.sender);
+                if (debt != 0) revert CometDebtNotAllowed(targets[i], debt);
             }
             unchecked {
                 ++i;
