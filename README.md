@@ -36,7 +36,7 @@ GuardedExecModule is an ERC-7579 executor module that provides secure, whitelist
    - Explicitly authorized recipients (e.g., DEX routers, lending protocols)
 3. **ERC20 Approve Authorization**: The spender of an ERC20 `approve` must be a whitelisted target (a trusted contract such as the Zyfai Adapter or a protocol pool)
 4. **Authorization Grant Validation**: For Morpho Blue `setAuthorization(address,bool)` (`0xeecea000`) and ERC-7540 `setOperator(address,bool)` (`0x558a7297`), a grant (`true`) must name the Zyfai Adapter (`ADAPTER`). Any other grantee reverts, including other whitelisted targets. A revoke (`false`) is always allowed for any address, so a stale grant can always be removed. `ADAPTER` is an immutable set in the implementation constructor (prod: `0xaffD3c3cD06cf499deddf78b26868018A93f2C31` on Ethereum, Base and Arbitrum). It is fixed per implementation deployment: changing it requires deploying a new implementation and upgrading the module proxy
-5. **Aave v4 Spoke Health Factor**: After a batch that calls `borrow` (`0xd6bda0c0`), `withdraw` (`0x0ad58d2f`) or `setUsingAsCollateral` (`0x9e35c533`) on a target, the module reads `getUserAccountData(smartAccount).healthFactor` on that target and reverts the whole batch if it is below 1.5 (`MIN_HEALTH_FACTOR`, WAD). The Spoke itself only enforces 1.0, so this stops a session key from pushing the account to the edge of liquidation and liquidating it. These three selectors must only be whitelisted on Aave v4 Spokes
+5. **Aave v4 Spoke Health Factor**: After a batch that calls `borrow` (`0xd6bda0c0`), `withdraw` (`0x0ad58d2f`) or `setUsingAsCollateral` (`0x9e35c533`) on a target, the module reads `getUserAccountData(smartAccount).healthFactor` on that target and reverts the whole batch if it is below `minHealthFactor(spoke)` (WAD, 1.5 by default, set per Spoke by the owner with `setMinHealthFactor`, never below 1.1; `type(uint256).max` makes a Spoke lend-only). A batch that does not borrow on the Spoke may also end below the minimum if it does not lower the health factor, so a session key can still deleverage, enable collateral or withdraw non-collateral funds from a position a price move pushed below it. The Spoke itself only enforces 1.0, so this stops a session key from pushing the account to the edge of liquidation and liquidating it. All five Spoke position calls (`supply` `0x852a56a5`, `withdraw`, `borrow`, `repay` `0xb1e8f8ef`, `setUsingAsCollateral`) must be exactly 100 bytes and name the smart account as `onBehalfOf`. These selectors must only be whitelisted on Aave v4 Spokes
 6. **IPOR Request Fee**: IPOR Fusion WithdrawManager `requestShares(uint256)` (`0xfc415e9c`) takes its fee from the smart account's vault shares with no cap or approval, and each request overwrites the last. While the target's `getRequestFee()` is non-zero, a request must not exceed the smart account's vault shares, must not replace a request whose withdraw window is still open, must be the only one to that WithdrawManager in the batch, the fee must be at most 1% and the withdraw window at least 1 day. A session key can then cost at most 1% of the position per vault per day. At fee 0 the call is unrestricted. This selector must only be whitelisted on IPOR WithdrawManagers
 7. **Compound V3 No Debt**: In Comet, `withdraw(address,uint256)` (`0xf3fef3a3`) is also the borrow entrypoint — withdrawing the base asset past the supplied balance opens debt against the account's collateral, and Comet only enforces its own collateral factor. Zyfai lends on Comet and never borrows there, so after a batch that calls that selector on a target, the module reads `borrowBalanceOf(smartAccount)` on that target and reverts the whole batch if it is non-zero. The check reads the final position, so a batch may still repay existing debt and withdraw the freed collateral. `supply` (`0xf2b9fdb8`) is not checked: supplying the base asset repays, and supplying collateral cannot by itself create debt. `0xf3fef3a3` must only be whitelisted on Comet markets
 8. **Owner-Controlled Whitelist**: Only contract owner can modify whitelist (should be multisig for production)
@@ -87,14 +87,15 @@ These calls would let a session key bypass the checks above:
 - Execute ERC20 transfers to authorized recipients only
 - Approve ERC20 spending to whitelisted targets only
 - Grant protocol authorizations/operators to the Adapter only
-- Borrow on an Aave v4 Spoke while keeping the account health factor at or above 1.5
+- Borrow on an Aave v4 Spoke while keeping the account health factor at or above the Spoke minimum (1.5 by default)
 
 **Limitations**:
 - Cannot execute operations on non-whitelisted target+selectors
 - Cannot transfer ERC20 tokens to arbitrary addresses
 - Cannot approve a non-whitelisted address
 - Cannot authorize or make an operator of any address other than the Adapter
-- Cannot leave an Aave v4 Spoke position below a 1.5 health factor
+- Cannot lower an Aave v4 Spoke health factor below the Spoke minimum, or borrow below it
+- Cannot act on an Aave v4 Spoke position other than the smart account's own
 - Cannot pause the module
 - Cannot modify the whitelist
 - Cannot upgrade the module

@@ -77,13 +77,29 @@ contract GuardedExecModuleUpgradeable is
     /// @notice Selector of Aave v4 Spoke `setUsingAsCollateral(uint256,bool,address)`
     bytes4 private constant SPOKE_SET_COLLATERAL_SELECTOR = 0x9e35c533;
 
+    /// @notice Selector of Aave v4 Spoke `supply(uint256,uint256,address)`
+    bytes4 private constant SPOKE_SUPPLY_SELECTOR = 0x852a56a5;
+
+    /// @notice Selector of Aave v4 Spoke `repay(uint256,uint256,address)`
+    bytes4 private constant SPOKE_REPAY_SELECTOR = 0xb1e8f8ef;
+
     /**
-     * @notice Minimum Aave v4 Spoke health factor (WAD) a batch may leave the smart account at
+     * @notice Calldata length of the five Spoke position calls: 4 (selector) + 32 (reserveId)
+     *         + 32 (amount or bool) + 32 (onBehalfOf)
+     */
+    uint256 private constant SPOKE_CALL_LENGTH = 100;
+
+    /**
+     * @notice Default minimum Aave v4 Spoke health factor (WAD) a batch may leave the smart
+     *         account at, for Spokes without an owner-set minimum
      * @dev 1.5 instead of the Spoke's 1.0 liquidation threshold, so a session key cannot park the
      *      position next to liquidation; collateral must drop by a third before liquidation,
      *      which leaves room for gap moves on volatile collateral such as tokenized equities.
      */
-    uint256 private constant MIN_HEALTH_FACTOR = 1.5e18;
+    uint256 private constant DEFAULT_MIN_HEALTH_FACTOR = 1.5e18;
+
+    /// @notice Lowest minimum health factor (WAD) the owner can set for a Spoke
+    uint256 private constant LOWEST_MIN_HEALTH_FACTOR = 1.1e18;
 
     /**
      * @notice Selector of Compound V3 `withdraw(address,uint256)` on a Comet market
@@ -163,6 +179,24 @@ contract GuardedExecModuleUpgradeable is
          *      Can be updated via updateRegistry for migration.
          */
         TargetRegistry registry;
+        /**
+         * @notice Owner-set minimum health factor (WAD) per Aave v4 Spoke
+         * @dev 0 means DEFAULT_MIN_HEALTH_FACTOR. Appended after `registry` (upgrade-safe).
+         */
+        mapping(address spoke => uint256) minHealthFactors;
+    }
+
+    /**
+     * @notice An Aave v4 Spoke touched by a health-factor-lowering call in the current batch
+     * @param spoke The Spoke address
+     * @param borrowed Whether the batch borrows on this Spoke
+     * @param initialHealthFactor The smart account's health factor on this Spoke before the batch
+     *        (only read when the batch does not borrow on it)
+     */
+    struct SpokeCheck {
+        address spoke;
+        bool borrowed;
+        uint256 initialHealthFactor;
     }
 
     // keccak256(abi.encode(uint256(keccak256("zyfai.storage.GuardedExecModule")) - 1)) & ~bytes32(uint256(0xff))
@@ -186,6 +220,13 @@ contract GuardedExecModuleUpgradeable is
      * @param newRegistry The new registry address
      */
     event RegistryUpdated(address indexed oldRegistry, address indexed newRegistry);
+
+    /**
+     * @notice Emitted when the owner sets a Spoke's minimum health factor
+     * @param spoke The Aave v4 Spoke
+     * @param minHealthFactor The new minimum (WAD); 0 restores DEFAULT_MIN_HEALTH_FACTOR
+     */
+    event MinHealthFactorUpdated(address indexed spoke, uint256 minHealthFactor);
 
     /**
      * @notice Emitted after a successful guarded batch execution
@@ -237,10 +278,20 @@ contract GuardedExecModuleUpgradeable is
     /// @param authorized The unauthorized grantee address
     error UnauthorizedAuthorizationGrant(address target, address authorized);
 
-    /// @notice Thrown when a batch leaves the smart account below MIN_HEALTH_FACTOR on a Spoke
+    /// @notice Thrown when a batch leaves the smart account below the Spoke's minimum health
+    ///         factor, unless it does not borrow there and does not lower the health factor
     /// @param spoke The Aave v4 Spoke whose health factor check failed
     /// @param healthFactor The smart account's health factor on that Spoke after the batch (WAD)
     error HealthFactorTooLow(address spoke, uint256 healthFactor);
+
+    /// @notice Thrown when a Spoke position call names another account as onBehalfOf
+    /// @param spoke The Aave v4 Spoke called
+    /// @param onBehalfOf The onBehalfOf argument, which must be the smart account
+    error SpokeOnBehalfOfNotAccount(address spoke, address onBehalfOf);
+
+    /// @notice Thrown when the owner sets a non-zero minimum below LOWEST_MIN_HEALTH_FACTOR
+    /// @param minHealthFactor The rejected minimum (WAD)
+    error InvalidMinHealthFactor(uint256 minHealthFactor);
 
     /// @notice Thrown when a batch leaves the smart account owing base assets on a Comet market
     /// @param comet The Compound V3 Comet the smart account still owes on
@@ -410,10 +461,15 @@ contract GuardedExecModuleUpgradeable is
      *      Executions maintain smart account context (msg.sender = smart account).
      *      All validations occur before execution (checks-effects-interactions pattern).
      *      The smart account uses its own balance to forward ETH to target contracts.
+     *      The five Aave v4 Spoke position calls (supply, withdraw, borrow, repay,
+     *      setUsingAsCollateral) must name the smart account as onBehalfOf.
      *      After execution, every target called with an Aave v4 Spoke borrow, withdraw or
-     *      setUsingAsCollateral selector must report a health factor >= MIN_HEALTH_FACTOR for the
-     *      smart account, otherwise the whole batch reverts. The check runs once per Spoke at the
-     *      end of the batch, so intermediate states (e.g. borrow then repay) are allowed.
+     *      setUsingAsCollateral selector must report a health factor >= minHealthFactor(spoke)
+     *      for the smart account. A batch that does not borrow on that Spoke may also end below
+     *      the minimum if it does not lower the health factor, so the session key can still
+     *      de-risk a position a price move has pushed below it. Otherwise the whole batch
+     *      reverts. The check runs once per Spoke at the end of the batch, so intermediate
+     *      states (e.g. borrow then repay) are allowed.
      *      Any target whitelisted with one of those selectors must be an Aave v4 Spoke: on any
      *      other contract the `getUserAccountData` call reverts the batch. Never whitelist these
      *      Spoke selectors: `setUserPositionManager`, `setUserPositionManagersWithSig` and
@@ -439,7 +495,7 @@ contract GuardedExecModuleUpgradeable is
         
         address[] memory targets = new address[](length);
         bytes4[] memory selectors = new bytes4[](length);
-        address[] memory spokes = new address[](length);
+        SpokeCheck[] memory spokes = new SpokeCheck[](length);
         uint256 spokeCount;
         address[] memory withdrawManagers = new address[](length);
         uint256 withdrawManagerCount;
@@ -481,7 +537,11 @@ contract GuardedExecModuleUpgradeable is
                 selector == SPOKE_BORROW_SELECTOR || selector == SPOKE_WITHDRAW_SELECTOR
                     || selector == SPOKE_SET_COLLATERAL_SELECTOR
             ) {
-                spokeCount = _recordSpoke(spokes, spokeCount, target);
+                _validateSpokeOnBehalfOf(target, callData, callDataLength);
+                spokeCount =
+                    _recordSpoke(spokes, spokeCount, target, selector == SPOKE_BORROW_SELECTOR);
+            } else if (selector == SPOKE_SUPPLY_SELECTOR || selector == SPOKE_REPAY_SELECTOR) {
+                _validateSpokeOnBehalfOf(target, callData, callDataLength);
             } else if (selector == REQUEST_SHARES_SELECTOR) {
                 withdrawManagerCount = _validateRequestShares(
                     withdrawManagers, withdrawManagerCount, target, callData, callDataLength
@@ -496,6 +556,7 @@ contract GuardedExecModuleUpgradeable is
         // Execute batch via smart account (maintains msg.sender = smart account)
         // The smart account uses its own balance to forward ETH to target contracts
         // based on the Execution.value fields in the executions array
+        _snapshotSpokeHealthFactors(spokes, spokeCount);
         _execute(executions);
 
         _validateSpokeHealthFactors(spokes, spokeCount);
@@ -517,6 +578,31 @@ contract GuardedExecModuleUpgradeable is
         s.registry = TargetRegistry(newRegistry);
         
         emit RegistryUpdated(oldRegistry, newRegistry);
+    }
+
+    /**
+     * @notice Set the minimum health factor batches must leave the smart account at on a Spoke
+     * @dev Owner only. 0 restores DEFAULT_MIN_HEALTH_FACTOR. type(uint256).max makes the Spoke
+     *      lend-only for session keys: any borrow leaves a finite health factor and reverts.
+     * @param spoke The Aave v4 Spoke
+     * @param minHealthFactor_ The minimum (WAD), 0 or >= LOWEST_MIN_HEALTH_FACTOR
+     */
+    function setMinHealthFactor(address spoke, uint256 minHealthFactor_) external onlyOwner {
+        if (minHealthFactor_ != 0 && minHealthFactor_ < LOWEST_MIN_HEALTH_FACTOR) {
+            revert InvalidMinHealthFactor(minHealthFactor_);
+        }
+        _getGuardedExecModuleStorage().minHealthFactors[spoke] = minHealthFactor_;
+        emit MinHealthFactorUpdated(spoke, minHealthFactor_);
+    }
+
+    /**
+     * @notice Minimum health factor (WAD) batches must leave the smart account at on a Spoke
+     * @param spoke The Aave v4 Spoke
+     * @return The owner-set minimum, or DEFAULT_MIN_HEALTH_FACTOR if none is set
+     */
+    function minHealthFactor(address spoke) public view returns (uint256) {
+        uint256 minimum = _getGuardedExecModuleStorage().minHealthFactors[spoke];
+        return minimum == 0 ? DEFAULT_MIN_HEALTH_FACTOR : minimum;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -625,49 +711,103 @@ contract GuardedExecModuleUpgradeable is
     }
 
     /**
-     * @notice Append a Spoke to the list checked after execution, unless already present
+     * @notice Require a Spoke position call to act on the smart account's own position
+     * @dev The Spoke already requires onBehalfOf to be the caller or an approved position
+     *      manager, but Spokes are upgradeable; this keeps the binding in the module.
+     * @param spoke The Aave v4 Spoke called
+     * @param callData The encoded (uint256 reserveId, uint256|bool, address onBehalfOf) call data
+     * @param callDataLength The length of callData (cached to avoid repeated calldata loads)
+     */
+    function _validateSpokeOnBehalfOf(
+        address spoke,
+        bytes calldata callData,
+        uint256 callDataLength
+    )
+        internal
+        view
+    {
+        if (callDataLength != SPOKE_CALL_LENGTH) revert InvalidCalldata();
+
+        // Extract onBehalfOf from the third word (bytes 80-99, ignoring 12-byte padding)
+        address onBehalfOf = address(bytes20(callData[80:100]));
+        if (onBehalfOf != msg.sender) revert SpokeOnBehalfOfNotAccount(spoke, onBehalfOf);
+    }
+
+    /**
+     * @notice Append a Spoke to the list checked after execution, or flag a borrow on it
      * @dev Linear scan; batches are small.
      * @param spokes The Spokes recorded so far (sized to the batch length)
      * @param count The number of Spokes recorded so far
      * @param spoke The Spoke targeted by the current execution
+     * @param isBorrow Whether the current execution is a borrow
      * @return The updated number of recorded Spokes
      */
     function _recordSpoke(
-        address[] memory spokes,
+        SpokeCheck[] memory spokes,
         uint256 count,
-        address spoke
+        address spoke,
+        bool isBorrow
     )
         internal
         pure
         returns (uint256)
     {
         for (uint256 i = 0; i < count;) {
-            if (spokes[i] == spoke) return count;
+            if (spokes[i].spoke == spoke) {
+                if (isBorrow) spokes[i].borrowed = true;
+                return count;
+            }
             unchecked {
                 ++i;
             }
         }
-        spokes[count] = spoke;
+        spokes[count].spoke = spoke;
+        spokes[count].borrowed = isBorrow;
         unchecked {
             return count + 1;
         }
     }
 
     /**
-     * @notice Require the smart account's health factor on each recorded Spoke to be at least
-     *         MIN_HEALTH_FACTOR
-     * @dev Runs after execution. msg.sender is the smart account, and the Spoke binds these calls
-     *      to its position: `onBehalfOf` must be the caller unless the caller is a
-     *      governance-activated position manager approved by `onBehalfOf`.
+     * @notice Read the smart account's health factor before execution on each recorded Spoke
+     *         the batch does not borrow on
      * @param spokes The Spokes touched by health-factor-lowering calls in this batch
      * @param count The number of recorded Spokes
      */
-    function _validateSpokeHealthFactors(address[] memory spokes, uint256 count) internal view {
+    function _snapshotSpokeHealthFactors(SpokeCheck[] memory spokes, uint256 count) internal view {
         for (uint256 i = 0; i < count;) {
+            if (!spokes[i].borrowed) {
+                spokes[i].initialHealthFactor =
+                    IAaveV4Spoke(spokes[i].spoke).getUserAccountData(msg.sender).healthFactor;
+            }
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    /**
+     * @notice Require the smart account's health factor on each recorded Spoke to be at least
+     *         minHealthFactor(spoke), or, when the batch does not borrow there, not lower than
+     *         before the batch
+     * @dev Runs after execution. Without a borrow the debt cannot grow, so a batch that does not
+     *      lower the health factor cannot raise the risk; this lets the session key withdraw
+     *      non-collateral funds, enable collateral or deleverage below the minimum. A borrow must
+     *      always end at the minimum, otherwise a key could pull more collateral into a
+     *      position near liquidation and borrow against it at a constant health factor.
+     * @param spokes The Spokes touched by health-factor-lowering calls in this batch
+     * @param count The number of recorded Spokes
+     */
+    function _validateSpokeHealthFactors(SpokeCheck[] memory spokes, uint256 count) internal view {
+        for (uint256 i = 0; i < count;) {
+            SpokeCheck memory check = spokes[i];
             uint256 healthFactor =
-                IAaveV4Spoke(spokes[i]).getUserAccountData(msg.sender).healthFactor;
-            if (healthFactor < MIN_HEALTH_FACTOR) {
-                revert HealthFactorTooLow(spokes[i], healthFactor);
+                IAaveV4Spoke(check.spoke).getUserAccountData(msg.sender).healthFactor;
+            if (
+                healthFactor < minHealthFactor(check.spoke)
+                    && (check.borrowed || healthFactor < check.initialHealthFactor)
+            ) {
+                revert HealthFactorTooLow(check.spoke, healthFactor);
             }
             unchecked {
                 ++i;

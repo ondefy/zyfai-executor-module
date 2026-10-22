@@ -7,6 +7,7 @@ import { MODULE_TYPE_EXECUTOR } from "modulekit/accounts/common/interfaces/IERC7
 import { Execution } from "modulekit/accounts/erc7579/lib/ExecutionLib.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import { UUPSUpgradeable } from
     "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { MockDeFiPool } from "test/mocks/MockDeFiPool.sol";
@@ -1895,6 +1896,280 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
         );
 
         assertEq(spoke.debt(smartAccount), collateral < MIN_HEALTH_FACTOR ? 0 : 1e18, "debt");
+    }
+
+    function _healthFactorOf(MockAaveV4Spoke spoke) internal view returns (uint256) {
+        return spoke.getUserAccountData(smartAccount).healthFactor;
+    }
+
+    /**
+     * @notice Test: below the minimum, a batch without borrow that raises the health factor
+     *         passes (deleverage: withdraw collateral, repay more debt), 1.2 -> 1.375
+     */
+    function test_SpokeDeleverageBelowMinHealthFactorSucceeds() public {
+        MockAaveV4Spoke spoke = _deployAndWhitelistSpoke();
+        spoke.setPosition(smartAccount, 1.2e18, 1e18, true);
+
+        Execution[] memory executions = new Execution[](2);
+        executions[0] = Execution({
+            target: address(spoke),
+            value: 0,
+            callData: _spokeCall(MockAaveV4Spoke.withdraw.selector, 0.1e18)
+        });
+        executions[1] = Execution({
+            target: address(spoke),
+            value: 0,
+            callData: _spokeCall(MockAaveV4Spoke.repay.selector, 0.2e18)
+        });
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(executions);
+
+        assertEq(_healthFactorOf(spoke), 1.375e18, "health factor raised, still below 1.5");
+    }
+
+    /**
+     * @notice Test: below the minimum, enabling collateral passes (0 -> 1.2)
+     */
+    function test_SpokeEnableCollateralBelowMinHealthFactorSucceeds() public {
+        MockAaveV4Spoke spoke = _deployAndWhitelistSpoke();
+        spoke.setPosition(smartAccount, 1.2e18, 1e18, false);
+
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(
+                address(spoke),
+                abi.encodeWithSelector(
+                    MockAaveV4Spoke.setUsingAsCollateral.selector, RESERVE_ID, true, smartAccount
+                )
+            )
+        );
+
+        assertEq(_healthFactorOf(spoke), 1.2e18, "collateral enabled");
+    }
+
+    /**
+     * @notice Test: below the minimum, a batch without borrow that leaves the health factor
+     *         unchanged passes (e.g. withdrawing funds that do not count as collateral)
+     */
+    function test_SpokeUnchangedHealthFactorBelowMinSucceeds() public {
+        MockAaveV4Spoke spoke = _deployAndWhitelistSpoke();
+        spoke.setPosition(smartAccount, 1.2e18, 1e18, true);
+
+        Execution[] memory executions = new Execution[](2);
+        executions[0] = Execution({
+            target: address(spoke),
+            value: 0,
+            callData: _spokeCall(MockAaveV4Spoke.withdraw.selector, 0.1e18)
+        });
+        executions[1] = Execution({
+            target: address(spoke),
+            value: 0,
+            callData: _spokeCall(MockAaveV4Spoke.supply.selector, 0.1e18)
+        });
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(executions);
+
+        assertEq(_healthFactorOf(spoke), 1.2e18, "health factor unchanged");
+    }
+
+    /**
+     * @notice Test: below the minimum, a batch that lowers the health factor still reverts
+     */
+    function test_SpokeWithdrawLoweringHealthFactorBelowMinReverts() public {
+        MockAaveV4Spoke spoke = _deployAndWhitelistSpoke();
+        spoke.setPosition(smartAccount, 1.2e18, 1e18, true);
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.HealthFactorTooLow.selector, address(spoke), 1.1e18
+            )
+        );
+        guardedModule.executeGuardedBatch(
+            _singleExecution(address(spoke), _spokeCall(MockAaveV4Spoke.withdraw.selector, 0.1e18))
+        );
+    }
+
+    /**
+     * @notice Test: a batch that borrows must end at the minimum even if it raises the health
+     *         factor; otherwise a key could pull more collateral into a position near
+     *         liquidation and borrow against it (1.2 -> 1.47 with supply + borrow)
+     */
+    function test_SpokeBorrowBelowMinRevertsEvenWhenHealthFactorRises() public {
+        MockAaveV4Spoke spoke = _deployAndWhitelistSpoke();
+        spoke.setPosition(smartAccount, 1.2e18, 1e18, true);
+
+        Execution[] memory executions = new Execution[](2);
+        executions[0] = Execution({
+            target: address(spoke),
+            value: 0,
+            callData: _spokeCall(MockAaveV4Spoke.supply.selector, 1e18)
+        });
+        executions[1] = Execution({
+            target: address(spoke),
+            value: 0,
+            callData: _spokeCall(MockAaveV4Spoke.borrow.selector, 0.5e18)
+        });
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.HealthFactorTooLow.selector,
+                address(spoke),
+                uint256(2.2e18) * 1e18 / 1.5e18
+            )
+        );
+        guardedModule.executeGuardedBatch(executions);
+    }
+
+    /**
+     * @notice Fuzz: a batch without borrow never leaves the health factor below both the
+     *         minimum and its starting value
+     */
+    function testFuzz_SpokeNoBorrowBatchNeverLowersRisk(uint256 withdrawn, uint256 repaid) public {
+        withdrawn = bound(withdrawn, 1, 1.2e18);
+        repaid = bound(repaid, 1, 1e18);
+        MockAaveV4Spoke spoke = _deployAndWhitelistSpoke();
+        spoke.setPosition(smartAccount, 1.2e18, 1e18, true);
+
+        Execution[] memory executions = new Execution[](2);
+        executions[0] = Execution({
+            target: address(spoke),
+            value: 0,
+            callData: _spokeCall(MockAaveV4Spoke.withdraw.selector, withdrawn)
+        });
+        executions[1] = Execution({
+            target: address(spoke),
+            value: 0,
+            callData: _spokeCall(MockAaveV4Spoke.repay.selector, repaid)
+        });
+        vm.prank(smartAccount);
+        try guardedModule.executeGuardedBatch(executions) { } catch { }
+
+        assertGe(_healthFactorOf(spoke), 1.2e18, "health factor below its starting value");
+    }
+
+    /**
+     * @notice Test: the owner sets a per-Spoke minimum; other Spokes keep the default, and 0
+     *         restores the default
+     */
+    function test_SetMinHealthFactorPerSpoke() public {
+        MockAaveV4Spoke spokeA = _deployAndWhitelistSpoke();
+        MockAaveV4Spoke spokeB = _deployAndWhitelistSpoke();
+        spokeA.setPosition(smartAccount, 1.8e18, 0, true);
+        spokeB.setPosition(smartAccount, 1.8e18, 0, true);
+        Execution[] memory borrowA =
+            _singleExecution(address(spokeA), _spokeCall(MockAaveV4Spoke.borrow.selector, 1e18));
+
+        vm.expectEmit(address(guardedModule));
+        emit GuardedExecModuleUpgradeable.MinHealthFactorUpdated(address(spokeA), 2e18);
+        vm.prank(moduleOwner);
+        guardedModule.setMinHealthFactor(address(spokeA), 2e18);
+        assertEq(guardedModule.minHealthFactor(address(spokeA)), 2e18, "spoke A minimum");
+        assertEq(guardedModule.minHealthFactor(address(spokeB)), 1.5e18, "spoke B default");
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.HealthFactorTooLow.selector, address(spokeA), 1.8e18
+            )
+        );
+        guardedModule.executeGuardedBatch(borrowA);
+
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(address(spokeB), _spokeCall(MockAaveV4Spoke.borrow.selector, 1e18))
+        );
+
+        vm.prank(moduleOwner);
+        guardedModule.setMinHealthFactor(address(spokeA), 0);
+        assertEq(guardedModule.minHealthFactor(address(spokeA)), 1.5e18, "default restored");
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(borrowA);
+    }
+
+    /**
+     * @notice Test: only the owner can set a minimum, it cannot go below 1.1, and
+     *         type(uint256).max makes the Spoke lend-only for session keys
+     */
+    function test_SetMinHealthFactorOnlyOwnerAndBounds() public {
+        MockAaveV4Spoke spoke = _deployAndWhitelistSpoke();
+        spoke.setPosition(smartAccount, 3e18, 0, true);
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                OwnableUpgradeable.OwnableUnauthorizedAccount.selector, smartAccount
+            )
+        );
+        guardedModule.setMinHealthFactor(address(spoke), 2e18);
+
+        vm.startPrank(moduleOwner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.InvalidMinHealthFactor.selector, 1.1e18 - 1
+            )
+        );
+        guardedModule.setMinHealthFactor(address(spoke), 1.1e18 - 1);
+        guardedModule.setMinHealthFactor(address(spoke), 1.1e18);
+        guardedModule.setMinHealthFactor(address(spoke), type(uint256).max);
+        vm.stopPrank();
+
+        vm.prank(smartAccount);
+        vm.expectPartialRevert(GuardedExecModuleUpgradeable.HealthFactorTooLow.selector);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(address(spoke), _spokeCall(MockAaveV4Spoke.borrow.selector, 1e18))
+        );
+
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(address(spoke), _spokeCall(MockAaveV4Spoke.withdraw.selector, 1e18))
+        );
+    }
+
+    /**
+     * @notice Test: all five Spoke position calls must name the smart account as onBehalfOf
+     *         and have the exact (uint256, uint256|bool, address) length
+     */
+    function test_SpokeCallsRequireSmartAccountOnBehalfOf() public {
+        MockAaveV4Spoke spoke = _deployAndWhitelistSpoke();
+        spoke.setPosition(smartAccount, 3e18, 1e18, true);
+        address attacker = makeAddr("spokeAttacker");
+        bytes4[5] memory spokeSelectors = [
+            MockAaveV4Spoke.supply.selector,
+            MockAaveV4Spoke.withdraw.selector,
+            MockAaveV4Spoke.borrow.selector,
+            MockAaveV4Spoke.repay.selector,
+            MockAaveV4Spoke.setUsingAsCollateral.selector
+        ];
+
+        for (uint256 i = 0; i < spokeSelectors.length; i++) {
+            vm.prank(smartAccount);
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    GuardedExecModuleUpgradeable.SpokeOnBehalfOfNotAccount.selector,
+                    address(spoke),
+                    attacker
+                )
+            );
+            guardedModule.executeGuardedBatch(
+                _singleExecution(
+                    address(spoke),
+                    abi.encodeWithSelector(spokeSelectors[i], RESERVE_ID, 1, attacker)
+                )
+            );
+
+            vm.prank(smartAccount);
+            vm.expectRevert(GuardedExecModuleUpgradeable.InvalidCalldata.selector);
+            guardedModule.executeGuardedBatch(
+                _singleExecution(
+                    address(spoke),
+                    abi.encodePacked(
+                        abi.encodeWithSelector(spokeSelectors[i], RESERVE_ID, 1, smartAccount),
+                        uint256(0)
+                    )
+                )
+            );
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
