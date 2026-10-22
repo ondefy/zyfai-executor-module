@@ -157,10 +157,6 @@ export const SELECTORS = {
   // Routing/Swap functions
   ROUTE_MULTI: '0xf52e33f5' as `0x${string}`, // routeMulti(...)
   
-  // Morpho Adapter functions
-  MORPHO_ADAPTER_ERC4626_DEPOSIT: '0x6ef5eeae' as `0x${string}`, // erc4626Deposit(address,uint256,uint256,address)
-  MORPHO_ADAPTER_ERC4626_REDEEM: '0xa7f6e606' as `0x${string}`, // erc4626Redeem(address,uint256,uint256,address,address)
-  
   // Merkl functions
   MERKL_CLAIM: '0x71ee95c0' as `0x${string}`, // claim(address[],address[],uint256[],bytes32[][])
 } as const;
@@ -232,20 +228,6 @@ export const whitelistConfig: WhitelistItem[] = [
     target: AAVE_POOLS.USDC,
     selector: SELECTORS.AAVE_WITHDRAW,
     description: "AAVE Pool USDC - withdraw()",
-  },
-  
-  // ========================================
-  // MORPHO ADAPTER FUNCTIONS (Base)
-  // ========================================
-  {
-    target: '0xb98c948cfa24072e58935bc004a8a7b376ae746a' as Address,
-    selector: SELECTORS.MORPHO_ADAPTER_ERC4626_DEPOSIT,
-    description: "Morpho Adapter (Base) - erc4626Deposit()",
-  },
-  {
-    target: '0xb98c948cfa24072e58935bc004a8a7b376ae746a' as Address,
-    selector: SELECTORS.MORPHO_ADAPTER_ERC4626_REDEEM,
-    description: "Morpho Adapter (Base) - erc4626Redeem()",
   },
   
   // ========================================

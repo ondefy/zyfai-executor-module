@@ -38,7 +38,6 @@ const TOKEN = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as const; // USDC on 
 // const TOKEN = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831' as const; // USDC on Arbitrum
 const BASE_RECIPIENTS = [
   '0x62be78705295ca9ffdac410b4a9b6101983a7c3b' as const,
-  '0xb98c948CFA24072e58935BC004a8A7b376AE746A' as const,
 ];
 
 async function main() {
