@@ -115,9 +115,6 @@ contract TargetRegistry is Ownable2Step, Pausable {
     /// @notice Thrown when array lengths don't match (e.g., targets and selectors arrays)
     error LengthMismatch();
 
-    /// @notice Thrown when trying to renounce registry ownership
-    error RenounceOwnershipDisabled();
-
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
@@ -146,14 +143,6 @@ contract TargetRegistry is Ownable2Step, Pausable {
      */
     function unpause() external onlyOwner {
         _unpause();
-    }
-
-    /**
-     * @notice Ownership renounce is disabled
-     * @dev Renouncing would freeze the whitelist: no delisting, pause or unpause.
-     */
-    function renounceOwnership() public pure override {
-        revert RenounceOwnershipDisabled();
     }
 
     /**
