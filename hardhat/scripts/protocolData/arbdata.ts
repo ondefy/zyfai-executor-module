@@ -221,15 +221,6 @@ export const whitelistConfig: WhitelistItem[] = [
   },
   
   // ========================================
-  // SILOV2 REWARDS CLAIMER (Arbitrum)
-  // ========================================
-  {
-    target: '0x43f8d8995C1b6b37Ca624C49819D671C8dcCe390' as Address,
-    selector: SELECTORS.SILO_CLAIM_REWARDS,
-    description: "SiloV2 RewardsClaimer (Arbitrum) - claimRewards()",
-  },
-
-  // ========================================
   // FLUID POOL FUNCTIONS
   // ========================================
   {
@@ -412,6 +403,20 @@ export const removeWhitelistConfig: WhitelistItem[] = [
     target: '0xb98c948cfa24072e58935bc004a8a7b376ae746a' as Address,
     selector: SELECTORS.MORPHO_ADAPTER_ERC4626_REDEEM,
     description: "Morpho Adapter (Base) - erc4626Redeem() - Wrong chain",
+  },
+
+  // ========================================
+  // SILOV2 (To Remove) - Silo no longer used on Arbitrum
+  // ========================================
+  {
+    target: '0x43f8d8995C1b6b37Ca624C49819D671C8dcCe390' as Address,
+    selector: SELECTORS.SILO_CLAIM_REWARDS,
+    description: "SiloV2 RewardsClaimer (Arbitrum) - claimRewards()",
+  },
+  {
+    target: '0xd8c989aB5f5b2ABDc76a8D3Acec165300BF30ecD' as Address,
+    selector: SELECTORS.ERC20_APPROVE,
+    description: "Silo ETH - Ethereal (soETH) - approve()",
   },
 ];
 
