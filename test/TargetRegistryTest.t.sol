@@ -211,6 +211,16 @@ contract TargetRegistryTest is Test {
         vm.prank(owner);
         registry.unpause();
     }
+
+    /**
+     * @notice Test: Registry owner cannot renounce ownership
+     */
+    function test_RenounceOwnershipDisabled() public {
+        vm.prank(owner);
+        vm.expectRevert(TargetRegistry.RenounceOwnershipDisabled.selector);
+        registry.renounceOwnership();
+        assertEq(registry.owner(), owner);
+    }
     
     /**
      * @notice Test: ERC20 transfer authorization checks with mock Safe wallet
