@@ -329,6 +329,9 @@ contract GuardedExecModuleUpgradeable is
     /// @notice Thrown when calldata is invalid (too short or malformed)
     error InvalidCalldata();
 
+    /// @notice Thrown when ownership renounce is attempted (disabled to preserve pause/upgrade/registry)
+    error RenounceOwnershipDisabled();
+
     /*//////////////////////////////////////////////////////////////
                              CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
@@ -603,6 +606,14 @@ contract GuardedExecModuleUpgradeable is
     function minHealthFactor(address spoke) public view returns (uint256) {
         uint256 minimum = _getGuardedExecModuleStorage().minHealthFactors[spoke];
         return minimum == 0 ? DEFAULT_MIN_HEALTH_FACTOR : minimum;
+    }
+
+    /**
+     * @notice Ownership renounce is disabled
+     * @dev Renouncing would brick pause, registry migration, and UUPS upgrades on the module proxy.
+     */
+    function renounceOwnership() public pure override {
+        revert RenounceOwnershipDisabled();
     }
 
     /*//////////////////////////////////////////////////////////////

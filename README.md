@@ -41,7 +41,7 @@ GuardedExecModule is an ERC-7579 executor module that provides secure, whitelist
 7. **Compound V3 No Debt**: In Comet, `withdraw(address,uint256)` (`0xf3fef3a3`) is also the borrow entrypoint — withdrawing the base asset past the supplied balance opens debt against the account's collateral, and Comet only enforces its own collateral factor. Zyfai lends on Comet and never borrows there, so after a batch that calls that selector on a target, the module reads `borrowBalanceOf(smartAccount)` on that target and reverts the whole batch if it is non-zero. The check reads the final position, so a batch may still repay existing debt and withdraw the freed collateral. `supply` (`0xf2b9fdb8`) is not checked: supplying the base asset repays, and supplying collateral cannot by itself create debt. `0xf3fef3a3` must only be whitelisted on Comet markets
 8. **Owner-Controlled Whitelist**: Only contract owner can modify whitelist (should be multisig for production)
 9. **Pausable**: Emergency stop capability for compromised session keys or malicious whitelist changes
-10. **Two-Step Ownership Transfer**: Prevents accidental or malicious ownership transfers
+10. **Two-Step Ownership Transfer**: Prevents accidental or malicious ownership transfers. `renounceOwnership()` is disabled on the module so pause, upgrade, and registry migration cannot be permanently bricked
 
 ### Selectors that must never be whitelisted
 
