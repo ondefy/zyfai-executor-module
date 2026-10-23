@@ -650,6 +650,8 @@ contract GuardedExecModuleUpgradeable is
      * @notice Validate ERC20 approve authorization
      * @dev Validates calldata format and checks if approve spender is whitelisted.
      *      Spender must be a whitelisted target address in the registry (trusted DeFi contract).
+     *      A zero-amount approve only clears an allowance, so it is allowed for any spender,
+     *      including one removed from the registry since the allowance was granted.
      * @param token The ERC20 token address
      * @param callData The encoded approve(address spender, uint256 amount) call data
      * @param callDataLength The length of callData (cached to avoid repeated calldata loads)
@@ -666,6 +668,8 @@ contract GuardedExecModuleUpgradeable is
     {
         // Standard ERC20 approve must be exactly 68 bytes: 4 (selector) + 32 (spender) + 32 (amount)
         if (callDataLength != MIN_TRANSFER_LENGTH) revert InvalidCalldata();
+
+        if (bytes32(callData[36:68]) == bytes32(0)) return;
 
         // Extract spender address from calldata (bytes 16-35, ignoring 12-byte padding)
         address spender = address(bytes20(callData[16:36]));

@@ -1087,6 +1087,46 @@ contract GuardedExecModuleUpgradeableTest is RhinestoneModuleKit, Test {
     }
 
     /**
+     * @notice Regression: an allowance to a spender removed from the registry can still be
+     *         cleared with approve(spender, 0), while a non-zero approve to it still reverts
+     */
+    function test_ERC20ApproveZeroClearsAllowanceOfDelistedSpender() public {
+        address spender = address(uniswapPool);
+        Execution[] memory grant = _singleExecution(
+            address(usdcToken), abi.encodeWithSelector(APPROVE_SELECTOR, spender, 100e6)
+        );
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(grant);
+        assertEq(usdcToken.allowance(smartAccount, spender), 100e6, "allowance granted");
+
+        address[] memory delistTargets = new address[](1);
+        bytes4[] memory delistSelectors = new bytes4[](1);
+        delistTargets[0] = spender;
+        delistSelectors[0] = SWAP_SELECTOR;
+        vm.prank(registryOwner);
+        registry.removeFromWhitelist(delistTargets, delistSelectors);
+        assertFalse(registry.whitelistedTargets(spender), "spender delisted");
+
+        vm.prank(smartAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GuardedExecModuleUpgradeable.UnauthorizedERC20Approve.selector,
+                address(usdcToken),
+                spender
+            )
+        );
+        guardedModule.executeGuardedBatch(grant);
+
+        vm.prank(smartAccount);
+        guardedModule.executeGuardedBatch(
+            _singleExecution(
+                address(usdcToken), abi.encodeWithSelector(APPROVE_SELECTOR, spender, 0)
+            )
+        );
+        assertEq(usdcToken.allowance(smartAccount, spender), 0, "allowance cleared");
+    }
+
+    /**
      * @notice Test: ERC20 approve to smart account itself should fail if not whitelisted
      * @dev Verifies that approve() calls check whitelist - even self-approval requires whitelisting
      */
