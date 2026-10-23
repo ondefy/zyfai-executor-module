@@ -34,9 +34,24 @@ GuardedExecModule is an ERC-7579 executor module that provides secure, whitelist
    - The smart wallet itself
    - Wallet owners
    - Explicitly authorized recipients (e.g., DEX routers, lending protocols)
-3. **Owner-Controlled Whitelist**: Only contract owner can modify whitelist (should be multisig for production)
-4. **Pausable**: Emergency stop capability for compromised session keys or malicious whitelist changes
-5. **Two-Step Ownership Transfer**: Prevents accidental or malicious ownership transfers
+3. **ERC20 Approve Authorization**: The spender of an ERC20 `approve` must be a whitelisted target (a trusted contract such as the Zyfai Adapter or a protocol pool). A zero-amount `approve` only clears an allowance, so it is allowed for any spender, including one removed from the registry
+4. **Authorization Grant Validation**: For Morpho Blue `setAuthorization(address,bool)` (`0xeecea000`) and ERC-7540 `setOperator(address,bool)` (`0x558a7297`), a grant (`true`) must name the Zyfai Adapter (`ADAPTER`). Any other grantee reverts, including other whitelisted targets. A revoke (`false`) is always allowed for any address, so a stale grant can always be removed. `ADAPTER` is an immutable set in the implementation constructor (prod: `0xaffD3c3cD06cf499deddf78b26868018A93f2C31` on Ethereum, Base and Arbitrum). It is fixed per implementation deployment: changing it requires deploying a new implementation and upgrading the module proxy
+5. **Aave v4 Spoke Health Factor**: After a batch that calls `borrow` (`0xd6bda0c0`), `withdraw` (`0x0ad58d2f`) or `setUsingAsCollateral` (`0x9e35c533`) on a target, the module reads `getUserAccountData(smartAccount).healthFactor` on that target and reverts the whole batch if it is below `minHealthFactor(spoke)` (WAD, 1.5 by default, set per Spoke by the owner with `setMinHealthFactor`, never below 1.1; `type(uint256).max` makes a Spoke lend-only). A batch that does not borrow on the Spoke may also end below the minimum if it does not lower the health factor, so a session key can still deleverage, enable collateral or withdraw non-collateral funds from a position a price move pushed below it. The Spoke itself only enforces 1.0, so this stops a session key from pushing the account to the edge of liquidation and liquidating it. All five Spoke position calls (`supply` `0x852a56a5`, `withdraw`, `borrow`, `repay` `0xb1e8f8ef`, `setUsingAsCollateral`) must be exactly 100 bytes and name the smart account as `onBehalfOf`. These selectors must only be whitelisted on Aave v4 Spokes
+6. **IPOR Request Fee**: IPOR Fusion WithdrawManager `requestShares(uint256)` (`0xfc415e9c`) takes its fee from the smart account's vault shares with no cap or approval, and each request overwrites the last. While the target's `getRequestFee()` is non-zero, a request must not exceed the smart account's vault shares, must not replace a request whose withdraw window is still open, must be the only one to that WithdrawManager in the batch, the fee must be at most 1% and the withdraw window at least 1 day. A session key can then cost at most 1% of the position per vault per day. At fee 0 the call is unrestricted. This selector must only be whitelisted on IPOR WithdrawManagers
+7. **Compound V3 No Debt**: In Comet, `withdraw(address,uint256)` (`0xf3fef3a3`) is also the borrow entrypoint — withdrawing the base asset past the supplied balance opens debt against the account's collateral, and Comet only enforces its own collateral factor. Zyfai lends on Comet and never borrows there, so after a batch that calls that selector on a target, the module reads `borrowBalanceOf(smartAccount)` on that target and reverts the whole batch if it is non-zero. The check reads the final position, so a batch may still repay existing debt and withdraw the freed collateral. `supply` (`0xf2b9fdb8`) is not checked: supplying the base asset repays, and supplying collateral cannot by itself create debt. `0xf3fef3a3` must only be whitelisted on Comet markets
+8. **Owner-Controlled Whitelist**: Only contract owner can modify whitelist (should be multisig for production)
+9. **Pausable**: Emergency stop capability for compromised session keys or malicious whitelist changes
+10. **Two-Step Ownership Transfer**: Prevents accidental or malicious ownership transfers. `renounceOwnership()` is disabled on the module so pause, upgrade, and registry migration cannot be permanently bricked
+
+### Selectors that must never be whitelisted
+
+These calls would let a session key bypass the checks above:
+
+- Aave v4 Spoke: `setUserPositionManager` (`0x8874e104`), `setUserPositionManagersWithSig` (`0x03ed05c1`), `multicall` (`0xac9650d8`), `liquidationCall`, `updateUserDynamicConfig` (`0x826002e2`)
+- Compound V3 Comet: `transfer`, `transferFrom`, `transferAsset`, `transferAssetFrom` (they move base balance into debt without reaching the no-debt check), `withdrawTo`, `withdrawFrom`, `supplyFrom`, `allow` (they hand the base asset or the whole position to another address)
+- Any protocol's operator/delegate/authorization grant that is not validated above (only `0xeecea000` and `0x558a7297` are checked)
+- Any selector on a contract that executes caller-chosen calls or lets the caller choose where tokens go, such as Morpho Bundler3 (`multicall`, `0x374f435d`) or the Enso router (`routeSingle` `0xb94c3609`, `routeMulti` `0xf52e33f5`). Whitelisting any selector also makes the contract an accepted `approve` spender
+- Morpho GeneralAdapter1 (Base `0xb98c948cfa24072e58935bc004a8a7b376ae746a`, Arbitrum `0x9954aFB60BB5A222714c478ac86990F221788B88`, Ethereum `0x4A6c312ec70E8747a587EE860a0353cd42Be0aE0`), neither as a target nor as an ERC20 transfer recipient. Anyone can drive it through Bundler3's public `multicall`, and its `erc20Transfer` / `erc20TransferFrom` send its balance, or the `initiator`'s approved tokens, to any receiver. Morpho vaults go through the Zyfai Adapter (`depositVaultForSelf` / `redeemVaultForSelf`)
 
 ## 👥 Actors and Roles
 
@@ -70,10 +85,17 @@ GuardedExecModule is an ERC-7579 executor module that provides secure, whitelist
 - Execute batch operations on whitelisted target+selector combinations
 - Execute operations that maintain smart account context (msg.sender = smart account)
 - Execute ERC20 transfers to authorized recipients only
+- Approve ERC20 spending to whitelisted targets only
+- Grant protocol authorizations/operators to the Adapter only
+- Borrow on an Aave v4 Spoke while keeping the account health factor at or above the Spoke minimum (1.5 by default)
 
 **Limitations**:
 - Cannot execute operations on non-whitelisted target+selectors
 - Cannot transfer ERC20 tokens to arbitrary addresses
+- Cannot approve a non-whitelisted address
+- Cannot authorize or make an operator of any address other than the Adapter
+- Cannot lower an Aave v4 Spoke health factor below the Spoke minimum, or borrow below it
+- Cannot act on an Aave v4 Spoke position other than the smart account's own
 - Cannot pause the module
 - Cannot modify the whitelist
 - Cannot upgrade the module
@@ -86,7 +108,7 @@ GuardedExecModule is an ERC-7579 executor module that provides secure, whitelist
 1. **GuardedExecModuleUpgradeable** (`src/module/GuardedExecModuleUpgradeable.sol`)
    - Main executor module contract
    - Implements ERC-7579 executor interface
-   - Validates whitelist and ERC20 transfer authorization
+   - Validates whitelist, ERC20 transfer/approve authorization, authorization grants, and Aave v4 Spoke health factor
    - Upgradeable via UUPS pattern
 
 2. **TargetRegistry** (`src/registry/TargetRegistry.sol`)
@@ -98,6 +120,9 @@ GuardedExecModule is an ERC-7579 executor module that provides secure, whitelist
 3. **ISafeWallet** (`src/interfaces/ISafeWallet.sol`)
    - Interface for querying smart wallet owners
    - Used for ERC20 transfer authorization checks
+
+4. **IAaveV4Spoke** (`src/interfaces/IAaveV4Spoke.sol`)
+   - Minimal Aave v4 Spoke interface (`getUserAccountData`) used for the health factor check
 
 ### Contract Relationships
 
@@ -119,7 +144,9 @@ Smart Account
    - Session key calls `executeGuardedBatch()` on GuardedExecModuleUpgradeable
    - Module validates all target+selector combinations against TargetRegistry whitelist
    - Module validates ERC20 transfers (if any) against authorized recipients
+   - Module validates ERC20 approve spenders against whitelisted targets, and requires `setAuthorization` / `setOperator` grantees to be the Adapter
    - Module executes batch operations via smart account (maintains context)
+   - If the batch called `borrow`, `withdraw` or `setUsingAsCollateral` on a Spoke, the module checks the account health factor on that Spoke after execution
 
 2. **Whitelist Management Flow**:
    - Registry owner calls `addToWhitelist()` or `removeFromWhitelist()` on TargetRegistry
@@ -311,8 +338,8 @@ Comments include:
 // 1. Deploy registry
 TargetRegistry registry = new TargetRegistry(owner);
 
-// 2. Deploy module implementation
-GuardedExecModuleUpgradeable implementation = new GuardedExecModuleUpgradeable();
+// 2. Deploy module implementation (adapter = the only setAuthorization/setOperator grantee)
+GuardedExecModuleUpgradeable implementation = new GuardedExecModuleUpgradeable(adapter);
 
 // 3. Deploy proxy and initialize
 ERC1967Proxy proxy = new ERC1967Proxy(
@@ -331,8 +358,12 @@ smartAccount.installModule(MODULE_TYPE_EXECUTOR, address(proxy), "");
 ### 🚀 Deploy and Verify (one-liner cheatsheet)
 
 ```bash
+# All module deploy/upgrade scripts read the implementation constructor arg from
+# ADAPTER_ADDRESS (prod: 0xaffD3c3cD06cf499deddf78b26868018A93f2C31). Verifying a new
+# implementation needs --constructor-args $(cast abi-encode "constructor(address)" $ADAPTER_ADDRESS)
+
 # Deploy ERC1967 module
-PRIVATE_KEY=pk forge script script/0-DeployUpgradeableSimple.s.sol --rpc-url https://base-mainnet.g.alchemy.com/v2/key --broadcast -vvvv
+ADAPTER_ADDRESS=<Adapter-Address> PRIVATE_KEY=pk forge script script/0-DeployUpgradeableSimple.s.sol --rpc-url https://base-mainnet.g.alchemy.com/v2/key --broadcast -vvvv
 
 # Deploy TargetRegistry
 PRIVATE_KEY=pk forge script script/1-DeployTargetRegistry.s.sol --rpc-url https://sonic-mainnet.g.alchemy.com/v2/key --broadcast -vvvv
@@ -341,7 +372,7 @@ PRIVATE_KEY=pk forge script script/1-DeployTargetRegistry.s.sol --rpc-url https:
 forge verify-contract <Registry-Address> src/registry/TargetRegistry.sol:TargetRegistry --rpc-url https://base-mainnet.g.alchemy.com/v2/key --chain-id 8453 --compiler-version 0.8.30 --etherscan-api-key etherscan-key --constructor-args 0x000000000000000000000000d61C43c089852e0AB68B967dD1eDe03a18e52223
 
 # Upgrade Module
-TARGET_REGISTRY_ADDRESS=<Registry-Address> forge script script/2-UpgradeAndUpdateModule.s.sol --rpc-url https://base-mainnet.g.alchemy.com/v2/key --private-key pk --broadcast -vvvv
+ADAPTER_ADDRESS=<Adapter-Address> TARGET_REGISTRY_ADDRESS=<Registry-Address> forge script script/2-UpgradeAndUpdateModule.s.sol --rpc-url https://base-mainnet.g.alchemy.com/v2/key --private-key pk --broadcast -vvvv
 
 # Verify New Impl of Module
 forge verify-contract <NEW-IMPL-Address> src/module/GuardedExecModuleUpgradeable.sol:GuardedExecModuleUpgradeable --rpc-url https://base-mainnet.g.alchemy.com/v2/key --chain-id 8453 --compiler-version 0.8.30 --etherscan-api-key etherscan-key
