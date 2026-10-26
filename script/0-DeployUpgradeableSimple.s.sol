@@ -11,14 +11,16 @@ contract DeployUpgradeableSimple is Script {
         vm.startBroadcast(deployerPrivateKey);
 
         address registryAddress = 0xd5C2dFD6d34c2bEA1dbec14DE4780d4A9D45ea17;
+        address adapter = vm.envAddress("ADAPTER_ADDRESS");
         address deployer = vm.addr(deployerPrivateKey);
 
         console.log("Deploying GuardedExecModuleUpgradeable...");
         console.log("Deployer:", deployer);
         console.log("Registry:", registryAddress);
+        console.log("Adapter:", adapter);
 
         // Deploy implementation
-        GuardedExecModuleUpgradeable implementation = new GuardedExecModuleUpgradeable();
+        GuardedExecModuleUpgradeable implementation = new GuardedExecModuleUpgradeable(adapter);
         console.log("Implementation:", address(implementation));
 
         // Deploy proxy

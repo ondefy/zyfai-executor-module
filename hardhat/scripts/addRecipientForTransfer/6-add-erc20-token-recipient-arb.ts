@@ -36,7 +36,6 @@ const TARGET_REGISTRY_ABI = parseAbi([
  */
 const TOKEN = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831' as const; // USDC on Arbitrum
 const ARB_RECIPIENTS = [
-  '0x9954afb60bb5a222714c478ac86990f221788b88' as const,
   '0x62be78705295ca9ffdac410b4a9b6101983a7c3b' as const,
 ];
 
