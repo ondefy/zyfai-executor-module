@@ -646,4 +646,34 @@ contract TargetRegistryTest is Test {
         registry.acceptOwnership();
         assertEq(registry.owner(), secondPendingOwner, "Second pending owner should become owner");
     }
+
+    /// Owney performance-fee payout. Session keys may transfer an ERC20 here only after
+    /// the registry owner authorizes this address for that token.
+    function test_PartnerFeePayoutRecipientRequiresExplicitAuthorization() public {
+        address token = makeAddr("feeToken");
+        address payout = 0x5d382abA27cd6a828F29Db4fac7aEf1CB7E701e2;
+        address[] memory safeOwners = new address[](1);
+        safeOwners[0] = makeAddr("safeOwner");
+        MockSafeWallet mockSafe = new MockSafeWallet(safeOwners);
+        TestTargetRegistryWithMockSafe testRegistry =
+            new TestTargetRegistryWithMockSafe(owner, address(mockSafe));
+
+        assertFalse(
+            testRegistry.isERC20TransferAuthorized(token, payout, address(mockSafe))
+        );
+
+        address[] memory recipients = new address[](1);
+        recipients[0] = payout;
+        vm.prank(owner);
+        testRegistry.addAllowedERC20TokenRecipient(token, recipients);
+
+        assertTrue(
+            testRegistry.isERC20TransferAuthorized(token, payout, address(mockSafe))
+        );
+        assertFalse(
+            testRegistry.isERC20TransferAuthorized(
+                token, makeAddr("other"), address(mockSafe)
+            )
+        );
+    }
 }
